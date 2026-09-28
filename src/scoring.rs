@@ -10,6 +10,8 @@ pub struct ScoringConfig {
     pub base_per_char: f32,
     /// Bonus for IoC regex matches
     pub ioc_bonus: f32,
+    /// Bonus for custom regex matches
+    pub regex_bonus: f32,
     /// Bonus for dictionary matches
     pub dictionary_bonus: f32,
     /// Penalty for high entropy
@@ -31,6 +33,7 @@ impl Default for ScoringConfig {
         Self {
             base_per_char: 0.1,
             ioc_bonus: 50.0,
+            regex_bonus: 45.0,
             dictionary_bonus: 100.0,
             entropy_penalty: -20.0,
             smart_peek_bonus: 30.0,
@@ -47,7 +50,8 @@ impl ScoringConfig {
     pub fn security_focused() -> Self {
         Self {
             base_per_char: 0.05,
-            ioc_bonus: 75.0, // High bonus for IoCs
+            ioc_bonus: 75.0,
+            regex_bonus: 75.0, // High bonus for IoCs
             dictionary_bonus: 50.0,
             entropy_penalty: -10.0,
             smart_peek_bonus: 40.0,
@@ -68,6 +72,7 @@ impl ScoringConfig {
         Self {
             base_per_char: 0.2,
             ioc_bonus: 60.0,
+            regex_bonus: 60.0,
             dictionary_bonus: 80.0,
             entropy_penalty: -30.0,
             smart_peek_bonus: 50.0,
@@ -104,6 +109,7 @@ impl ScoringEngine {
 
         // Dictionary
         tag_bonuses.insert(Tag::DictionaryMatch, config.dictionary_bonus);
+        tag_bonuses.insert(Tag::RegexMatch, config.regex_bonus);
         tag_bonuses.insert(Tag::FuzzyMatch, config.dictionary_bonus * 0.7); // Slightly less
 
         // Smart peeking
@@ -283,6 +289,9 @@ pub fn apply_tag_scores(strings: &mut [AnnotatedString], config: &ScoringConfig)
                 }
                 Tag::DictionaryMatch => {
                     score += config.dictionary_bonus;
+                }
+                Tag::RegexMatch => {
+                    score += config.regex_bonus;
                 }
                 Tag::FuzzyMatch => {
                     score += config.dictionary_bonus * 0.7;

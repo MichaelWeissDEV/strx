@@ -173,7 +173,7 @@ impl OutputFormatter {
             | crate::types::Tag::Sha256Hash => {
                 format!("[{}]", tag.to_string().cyan())
             }
-            crate::types::Tag::DictionaryMatch => {
+            crate::types::Tag::DictionaryMatch | crate::types::Tag::RegexMatch => {
                 format!("[{}]", tag.to_string().bright_green())
             }
             crate::types::Tag::CodeSnippet => {

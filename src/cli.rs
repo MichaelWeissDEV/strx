@@ -168,6 +168,7 @@ pub fn parse_tag(s: &str) -> Option<crate::types::Tag> {
         "sha1" => Some(crate::types::Tag::Sha1Hash),
         "sha256" => Some(crate::types::Tag::Sha256Hash),
         "dict" | "dictionary" => Some(crate::types::Tag::DictionaryMatch),
+            "regex" => Some(crate::types::Tag::RegexMatch),
         "code" => Some(crate::types::Tag::CodeSnippet),
         "ai" | "aitoken" => Some(crate::types::Tag::AiToken),
         "highentropy" | "high-entropy" => Some(crate::types::Tag::HighEntropy),

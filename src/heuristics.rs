@@ -215,13 +215,12 @@ impl RegexTagger {
     }
 
     /// Add patterns from command-line regex
-    pub fn add_custom_patterns(&mut self, patterns: &[String]) {
+    pub fn add_custom_patterns(&mut self, patterns: &[String]) -> anyhow::Result<()> {
         for pattern in patterns {
-            if let Ok(regex) = Regex::new(pattern) {
-                // Default tag for custom patterns
-                self.patterns.push((regex, Tag::DictionaryMatch));
-            }
+            let regex = Regex::new(pattern).map_err(|e| anyhow::anyhow!("Invalid regex pattern '{}': {}", pattern, e))?;
+            self.patterns.push((regex, Tag::RegexMatch));
         }
+        Ok(())
     }
 }
 
@@ -679,7 +678,7 @@ impl PipelineBuilder {
     }
 
     /// Build the pipeline
-    pub fn build(self) -> Result<HeuristicPipeline> {
+    pub fn build(self) -> anyhow::Result<HeuristicPipeline> {
         let mut pipeline = HeuristicPipeline::new();
 
         // Add smart peeker first (decode/normalize)
@@ -691,7 +690,7 @@ impl PipelineBuilder {
 
         // Add regex tagger (analyze original content)
         let mut tagger = RegexTagger::with_defaults();
-        tagger.add_custom_patterns(&self.custom_regex);
+        tagger.add_custom_patterns(&self.custom_regex)?;
         pipeline.add_filter(tagger);
 
         // Add dictionary matcher (analyze original content)
@@ -907,5 +906,24 @@ mod phase9_tests {
         assert_eq!(s.derived.len(), 1);
         assert_eq!(s.derived[0].kind, crate::types::DerivedKind::Base64);
         assert_eq!(s.derived[0].content, "https://evil.example");
+    }
+}
+
+#[cfg(test)]
+mod phase10_tests {
+    use super::*;
+
+    #[test]
+    fn test_invalid_regex_fails() {
+        let builder = PipelineBuilder::new()
+            .with_custom_regex(vec!["[invalid".to_string()]);
+        
+        let result = builder.build();
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Invalid regex pattern"));
+        } else {
+            panic!("Expected error, got Ok");
+        }
     }
 }

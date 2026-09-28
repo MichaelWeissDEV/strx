@@ -52,6 +52,8 @@ pub enum Tag {
     Sha256Hash,
     /// Dictionary word match (from --dict)
     DictionaryMatch,
+    /// Custom user regex match
+    RegexMatch,
     /// Code snippet (contains braces, keywords, etc.)
     CodeSnippet,
     /// AI/ML model token or prompt
@@ -78,6 +80,7 @@ impl fmt::Display for Tag {
             Tag::Sha1Hash => write!(f, "SHA1"),
             Tag::Sha256Hash => write!(f, "SHA256"),
             Tag::DictionaryMatch => write!(f, "Dict"),
+            Tag::RegexMatch => write!(f, "Regex"),
             Tag::CodeSnippet => write!(f, "Code"),
             Tag::AiToken => write!(f, "AI"),
             Tag::HighEntropy => write!(f, "HighEntropy"),
