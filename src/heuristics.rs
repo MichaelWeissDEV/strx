@@ -351,7 +351,6 @@ pub struct SmartPeeker {
     base64_engine: general_purpose::GeneralPurpose,
 }
 
-#[allow(dead_code)]
 impl SmartPeeker {
     pub fn new() -> Self {
         Self {
@@ -361,31 +360,54 @@ impl SmartPeeker {
 
     /// Check if a string looks like Base64
     fn is_base64_like(s: &str) -> bool {
-        if s.is_empty() {
+        let bytes = s.as_bytes();
+        if bytes.len() < 16 || !bytes.len().is_multiple_of(4) {
             return false;
         }
 
-        // Base64 alphabet
-        let base64_chars: HashSet<char> =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-                .chars()
-                .collect();
-
-        s.chars().all(|c| base64_chars.contains(&c))
+        let mut padding = 0;
+        for (i, &b) in bytes.iter().enumerate() {
+            if b.is_ascii_alphanumeric() || b == b'+' || b == b'/' {
+                if padding > 0 {
+                    return false; // Character after padding
+                }
+            } else if b == b'=' {
+                padding += 1;
+                if padding > 2 || i < bytes.len() - 2 {
+                    return false; // Too much padding or padding not at end
+                }
+            } else {
+                return false; // Invalid character
+            }
+        }
+        true
     }
 
     /// Check if a string looks like Hex
     fn is_hex_like(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        if bytes.len() < 8 || !bytes.len().is_multiple_of(2) {
+            return false;
+        }
+        bytes.iter().all(|b| b.is_ascii_hexdigit())
+    }
+
+    fn check_printable_ratio(s: &str) -> bool {
         if s.is_empty() {
             return false;
         }
-
-        // Hex string: even length, only hex digits
-        if !s.len().is_multiple_of(2) {
-            return false;
-        }
-
-        s.chars().all(|c| c.is_ascii_hexdigit())
+        let printable = s
+            .chars()
+            .filter(|c| {
+                if c.is_control() {
+                    matches!(*c, '\n' | '\r' | '\t')
+                } else {
+                    true
+                }
+            })
+            .count();
+        let ratio = printable as f32 / s.chars().count() as f32;
+        ratio > 0.8
     }
 
     /// Decode Base64 string
@@ -394,6 +416,7 @@ impl SmartPeeker {
             .decode(s)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
+            .filter(|decoded| Self::check_printable_ratio(decoded))
     }
 
     /// Decode Hex string
@@ -407,13 +430,7 @@ impl SmartPeeker {
             .collect::<Result<Vec<u8>, _>>()
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
-    }
-
-    /// Check if decoded content has low entropy (likely plaintext)
-    #[allow(dead_code)]
-    fn has_low_entropy(s: &str) -> bool {
-        let entropy = EntropyChecker::calculate_entropy(s);
-        entropy < 3.0 // Low threshold for decoded content
+            .filter(|decoded| Self::check_printable_ratio(decoded))
     }
 }
 
@@ -424,12 +441,32 @@ impl Default for SmartPeeker {
 }
 
 impl HeuristicFilter for SmartPeeker {
-    fn evaluate(&self, _s: &mut AnnotatedString) -> bool {
-        // NOTE: SmartPeeker is temporarily disabled to prevent mutation of original evidence
-        // When re-enabled, it should:
-        // 1. Store derived content separately (e.g., in a derived_content field)
-        // 2. Never modify candidate.offset, candidate.byte_len, candidate.raw_bytes
-        // 3. Add tags for decoded content
+    fn evaluate(&self, s: &mut AnnotatedString) -> bool {
+        let mut added = false;
+
+        // Try Base64
+        if Self::is_base64_like(&s.content) {
+            if let Some(decoded) = self.decode_base64(&s.content) {
+                s.derived.push(crate::types::DerivedContent {
+                    kind: crate::types::DerivedKind::Base64,
+                    content: decoded,
+                });
+                s.add_tag(Tag::Base64Decoded);
+                added = true;
+            }
+        }
+
+        // Try Hex
+        // We only attempt Hex if Base64 didn't already succeed or if we want to try multiple
+        if !added && Self::is_hex_like(&s.content) {
+            if let Some(decoded) = Self::decode_hex(&s.content) {
+                s.derived.push(crate::types::DerivedContent {
+                    kind: crate::types::DerivedKind::Hex,
+                    content: decoded,
+                });
+                s.add_tag(Tag::HexDecoded);
+            }
+        }
 
         true // Smart peeking never discards
     }

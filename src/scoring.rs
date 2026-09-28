@@ -324,12 +324,12 @@ mod tests {
 
         // Create a test string with various tags
         let mut s = AnnotatedString {
-                candidate: StringCandidate::new(0, 15, 15, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "test@example.com".to_string(),
+            candidate: StringCandidate::new(0, 15, 15, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "test@example.com".to_string(),
             derived: Vec::new(),
-            };
+        };
         s.add_tag(Tag::Email);
         s.add_tag(Tag::DictionaryMatch);
 
@@ -345,34 +345,34 @@ mod tests {
         let mut strings = vec![
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "short".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "short".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 10.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "medium".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "medium".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "long".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "long".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 30.0;
                 s
             },
@@ -390,34 +390,34 @@ mod tests {
         let strings = vec![
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "short".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "short".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 10.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "medium".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "medium".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "long".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "long".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 30.0;
                 s
             },
@@ -433,34 +433,34 @@ mod tests {
         let mut strings = vec![
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "short".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "short".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 0.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "medium".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "medium".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString {
-                candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
-                score: 0.0,
-                tags: Vec::new(),
-                content: "long".to_string(),
-            derived: Vec::new(),
-            };
+                    candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
+                    score: 0.0,
+                    tags: Vec::new(),
+                    content: "long".to_string(),
+                    derived: Vec::new(),
+                };
                 s.score = 100.0;
                 s
             },
@@ -484,21 +484,21 @@ mod tests {
                 score: 0.0,
                 tags: Vec::new(),
                 content: "medium".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
             AnnotatedString {
                 candidate: StringCandidate::new(5, 5, 5, EncodingType::Ascii),
                 score: 0.0,
                 tags: Vec::new(),
                 content: "short".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
             AnnotatedString {
                 candidate: StringCandidate::new(15, 15, 15, EncodingType::Ascii),
                 score: 0.0,
                 tags: Vec::new(),
                 content: "long".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
         ];
 
@@ -519,21 +519,21 @@ mod tests {
                 score: 0.0,
                 tags: Vec::new(),
                 content: "late".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
             AnnotatedString {
                 candidate: StringCandidate::new(0, 10, 10, EncodingType::Ascii),
                 score: 0.0,
                 tags: Vec::new(),
                 content: "first".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
             AnnotatedString {
                 candidate: StringCandidate::new(5, 10, 10, EncodingType::Ascii),
                 score: 0.0,
                 tags: Vec::new(),
                 content: "middle".to_string(),
-            derived: Vec::new(),
+                derived: Vec::new(),
             },
         ];
 

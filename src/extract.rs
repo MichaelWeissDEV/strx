@@ -68,7 +68,12 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
             } else {
                 EncodingType::Ascii
             };
-            results.push(StringCandidate::new(start_offset, byte_len, char_len, encoding));
+            results.push(StringCandidate::new(
+                start_offset,
+                byte_len,
+                char_len,
+                encoding,
+            ));
         }
         *in_string = false;
         *has_non_ascii = false;

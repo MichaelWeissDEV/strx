@@ -105,12 +105,7 @@ pub struct StringCandidate {
 
 impl StringCandidate {
     /// Create a new StringCandidate
-    pub fn new(
-        offset: usize,
-        byte_len: usize,
-        char_len: usize,
-        encoding: EncodingType,
-    ) -> Self {
+    pub fn new(offset: usize, byte_len: usize, char_len: usize, encoding: EncodingType) -> Self {
         Self {
             offset,
             byte_len,
@@ -175,14 +170,8 @@ impl AnnotatedString {
                 EncodingType::Ascii | EncodingType::Utf8 => {
                     String::from_utf8_lossy(bytes).to_string()
                 }
-                EncodingType::Utf16Le => encoding_rs::UTF_16LE
-                    .decode(bytes)
-                    .0
-                    .to_string(),
-                EncodingType::Utf16Be => encoding_rs::UTF_16BE
-                    .decode(bytes)
-                    .0
-                    .to_string(),
+                EncodingType::Utf16Le => encoding_rs::UTF_16LE.decode(bytes).0.to_string(),
+                EncodingType::Utf16Be => encoding_rs::UTF_16BE.decode(bytes).0.to_string(),
             },
             None => String::new(),
         };
@@ -233,7 +222,6 @@ impl PartialEq for AnnotatedString {
     fn eq(&self, other: &Self) -> bool {
         self.candidate.offset == other.candidate.offset
             && self.candidate.byte_len == other.candidate.byte_len
-            
     }
 }
 
