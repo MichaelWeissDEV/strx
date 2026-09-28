@@ -5,7 +5,7 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
 use regex::Regex;
-use std::collections::HashSet;
+
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -259,7 +259,7 @@ impl HeuristicFilter for RegexTagger {
 /// Dictionary matcher using Aho-Corasick algorithm
 pub struct DictionaryMatcher {
     automaton: Option<AhoCorasick>,
-    words: HashSet<String>,
+    words: Vec<String>,
     fuzzy_matching: bool,
     fuzzy_tolerance: usize,
 }
@@ -268,7 +268,7 @@ impl DictionaryMatcher {
     pub fn new(fuzzy_matching: bool) -> Self {
         Self {
             automaton: None,
-            words: HashSet::new(),
+            words: Vec::new(),
             fuzzy_matching,
             fuzzy_tolerance: 2, // Default tolerance
         }
@@ -279,54 +279,35 @@ impl DictionaryMatcher {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
-        let mut words: Vec<String> = Vec::new();
         for line in reader.lines() {
             let line = line?;
-            let trimmed = line.trim().to_string();
+            let trimmed = line.trim().to_lowercase();
             if !trimmed.is_empty() {
-                words.push(trimmed);
+                self.words.push(trimmed);
             }
         }
-
-        self.words.extend(words);
         Ok(())
     }
 
-    /// Load multiple dictionaries and build a single automaton
     pub fn load_dictionaries(&mut self, paths: &[impl AsRef<Path>]) -> Result<()> {
-        // Clear existing words and automaton
         self.words.clear();
         self.automaton = None;
 
-        // Load all dictionaries
         for path in paths {
             self.load_dictionary(path)?;
         }
 
-        // Deduplicate words
-        let mut unique_words: Vec<String> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        for word in &self.words {
-            if !seen.contains(word) {
-                seen.insert(word.clone());
-                unique_words.push(word.clone());
-            }
-        }
+        self.words.sort_unstable();
+        self.words.dedup();
 
-        // Build single Aho-Corasick automaton from all words
-        if !unique_words.is_empty() {
+        if !self.words.is_empty() {
             let automaton = AhoCorasickBuilder::new()
                 .kind(Some(AhoCorasickKind::DFA))
-                .build(&unique_words)?;
+                .build(&self.words)?;
             self.automaton = Some(automaton);
         }
 
         Ok(())
-    }
-
-    /// Set fuzzy matching tolerance
-    pub fn set_fuzzy_tolerance(&mut self, tolerance: usize) {
-        self.fuzzy_tolerance = tolerance;
     }
 }
 
@@ -348,7 +329,7 @@ impl HeuristicFilter for DictionaryMatcher {
                 // If fuzzy matching is enabled
                 if self.fuzzy_matching {
                     for word in &self.words {
-                        let distance = levenshtein(&lower, &word.to_lowercase());
+                        let distance = levenshtein(&lower, word);
                         if distance <= self.fuzzy_tolerance {
                             is_dict = true;
                             is_fuzzy = true;
