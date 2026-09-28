@@ -542,7 +542,7 @@ impl MinLengthFilter {
 
 impl HeuristicFilter for MinLengthFilter {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        s.candidate.byte_len >= self.min_len
+        s.candidate.char_len >= self.min_len
     }
 
     fn name(&self) -> &str {
@@ -563,7 +563,7 @@ impl MaxLengthFilter {
 
 impl HeuristicFilter for MaxLengthFilter {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        s.candidate.byte_len <= self.max_len
+        s.candidate.char_len <= self.max_len
     }
 
     fn name(&self) -> &str {

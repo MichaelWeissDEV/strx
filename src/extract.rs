@@ -427,10 +427,14 @@ mod tests {
 
     #[test]
     fn test_length_filtering() {
-        let data = b"abcd\x00abcdefgh\x00abc";
+        // String 1: "abcd" (char_len 4) -> discarded (min_len=5)
+        // String 2: "abcdefgh" (char_len 8) -> emitted
+        // String 3: "abc" (char_len 3) -> discarded
+        // String 4: "12345678901" (char_len 11) -> discarded (max_len=10), no splitting!
+        let data = b"abcd\x00abcdefgh\x00abc\x0012345678901";
         let config = ExtractionConfig {
             min_len: 5,
-            max_len: usize::MAX,
+            max_len: 10,
             start: 0,
             end: usize::MAX,
         };
@@ -440,8 +444,11 @@ mod tests {
             .into_iter()
             .filter(|s| s.encoding == EncodingType::Ascii)
             .collect();
+
+        // We should ONLY get "abcdefgh". The "12345678901" string must be dropped, not split.
         assert_eq!(strings.len(), 1);
-        assert_eq!(strings[0].byte_len, 8); // "abcdefgh"
+        assert_eq!(strings[0].char_len, 8); // "abcdefgh"
+        assert_eq!(strings[0].byte_len, 8);
     }
 
     #[test]

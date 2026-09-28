@@ -63,11 +63,11 @@ pub struct Args {
     #[arg(long, short = 'r')]
     pub raw: bool,
 
-    /// Minimum string length to extract (default: 4)
+    /// Minimum length in characters to extract (default: 4)
     #[arg(long, short = 'n', default_value = "4", value_parser = clap::value_parser!(usize))]
     pub min: usize,
 
-    /// Maximum string length to extract (default: unlimited)
+    /// Maximum length in characters to extract (default: unlimited)
     #[arg(long, short = 'x', value_parser = clap::value_parser!(usize))]
     pub max: Option<usize>,
 
