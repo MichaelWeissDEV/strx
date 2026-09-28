@@ -63,7 +63,8 @@ impl OutputFormatter {
     fn format_json(&self, s: &AnnotatedString, source_data: Option<&[u8]>) -> String {
         let mut obj = json!({
             "offset": s.candidate.offset,
-            "length": s.candidate.length,
+            "byte_length": s.candidate.byte_len,
+            "char_length": s.candidate.char_len,
             "content": s.content,
             "encoding": format!("{}", s.candidate.encoding),
             "score": s.score,
@@ -73,7 +74,12 @@ impl OutputFormatter {
         // Add context if requested
         if self.context_bytes > 0 && source_data.is_some() {
             if let Some(data) = source_data {
-                if let Some(context) = get_hex_context(data, s.candidate.offset, self.context_bytes) {
+                if let Some(context) = crate::io::get_hex_dump_context(
+                    data,
+                    s.candidate.offset,
+                    s.candidate.byte_len,
+                    self.context_bytes
+                ) {
                     obj["context"] = json!(context);
                 }
             }
@@ -128,9 +134,16 @@ impl OutputFormatter {
         // Context (hex dump)
         if self.context_bytes > 0 && source_data.is_some() {
             if let Some(data) = source_data {
-                if let Some(context) = get_hex_context(data, s.candidate.offset, self.context_bytes) {
+                if let Some(context) = crate::io::get_hex_dump_context(
+                    data,
+                    s.candidate.offset,
+                    s.candidate.byte_len,
+                    self.context_bytes
+                ) {
                     output.push('\n');
-                    output.push_str(&format_hex_dump(&context, s.candidate.offset, self.context_bytes));
+                    // Calculate the base offset for hex dump
+                    let base_offset = s.candidate.offset.saturating_sub(self.context_bytes);
+                    output.push_str(&format_hex_dump(&context, base_offset));
                 }
             }
         }
@@ -233,7 +246,8 @@ impl OutputFormatter {
             .map(|s| {
                 let mut obj = json!({
                     "offset": s.candidate.offset,
-                    "length": s.candidate.length,
+                    "byte_length": s.candidate.byte_len,
+                    "char_length": s.candidate.char_len,
                     "content": s.content,
                     "encoding": format!("{}", s.candidate.encoding),
                     "score": s.score,
@@ -242,7 +256,12 @@ impl OutputFormatter {
 
                 if self.context_bytes > 0 && source_data.is_some() {
                     if let Some(data) = source_data {
-                        if let Some(context) = get_hex_context(data, s.candidate.offset, self.context_bytes) {
+                        if let Some(context) = crate::io::get_hex_dump_context(
+                            data,
+                            s.candidate.offset,
+                            s.candidate.length,
+                            self.context_bytes
+                        ) {
                             obj["context"] = json!(context);
                         }
                     }
@@ -289,26 +308,10 @@ impl Default for OutputFormatter {
     }
 }
 
-/// Get hex context around an offset
-fn get_hex_context(data: &[u8], offset: usize, context_bytes: usize) -> Option<Vec<u8>> {
-    if offset >= data.len() {
-        return None;
-    }
-
-    let start = offset.saturating_sub(context_bytes);
-    let end = (offset + context_bytes + 1).min(data.len());
-    
-    if start >= end {
-        return None;
-    }
-
-    Some(data[start..end].to_vec())
-}
-
 /// Format hex dump (similar to hexdump -C)
-fn format_hex_dump(data: &[u8], string_offset: usize, context_bytes: usize) -> String {
+/// base_offset: the absolute file offset of the first byte in data
+fn format_hex_dump(data: &[u8], base_offset: usize) -> String {
     let mut output = String::new();
-    let base_offset = string_offset.saturating_sub(context_bytes);
     
     // Process in chunks of 16 bytes
     let mut offset = base_offset;
@@ -414,7 +417,7 @@ impl ExtractionStats {
 
     pub fn add_string(&mut self, s: &AnnotatedString) {
         self.total_strings += 1;
-        self.total_bytes += s.candidate.length;
+        self.total_bytes += s.candidate.byte_len;
 
         let encoding_str = format!("{}", s.candidate.encoding);
         *self.by_encoding.entry(encoding_str).or_insert(0) += 1;
@@ -536,7 +539,7 @@ mod tests {
     fn test_format_text() {
         let formatter = OutputFormatter::new().with_colors(false);
         let s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
         );
 
         let formatted = formatter.format_string(&s, None);
@@ -548,7 +551,7 @@ mod tests {
     fn test_format_json() {
         let formatter = OutputFormatter::new().with_json(true);
         let s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
         );
 
         let formatted = formatter.format_string(&s, None);
@@ -561,7 +564,7 @@ mod tests {
     fn test_format_with_tags() {
         let formatter = OutputFormatter::new().with_colors(false);
         let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 13, "192.168.1.1".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 13, "192.168.1.1".as_bytes().to_vec(), EncodingType::Ascii),
         );
         s.add_tag(Tag::IpV4);
         s.add_tag(Tag::DictionaryMatch);
@@ -583,12 +586,12 @@ mod tests {
         let mut stats = ExtractionStats::new();
         
         let mut s1 = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 5, "hello".as_bytes().to_vec(), EncodingType::Ascii),
         );
         s1.add_tag(Tag::DictionaryMatch);
         
         let s2 = AnnotatedString::from_candidate(
-            StringCandidate::new(5, 5, "world".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(5, 5, "world".as_bytes().to_vec(), EncodingType::Ascii),
         );
 
         stats.add_strings(&[s1, s2]);

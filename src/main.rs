@@ -7,7 +7,7 @@ use clap::Parser;
 use std::time::Instant;
 
 use strx::cli::Args;
-use strx::extract::{ExtractionConfig, extract_strings, extract_strings_simple};
+use strx::extract::{extract_strings, ExtractionConfig};
 use strx::heuristics::{HeuristicPipeline, PipelineBuilder, parse_tag_filters, filter_by_required_tags, filter_by_excluded_tags};
 use strx::io::InputSource;
 use strx::output::{OutputFormatter, ExtractionStats, print_summary};
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     };
 
     // Get data slice for processing
-    let data = source.as_slice()?;
+    let data = source.as_slice();
     
     if args.verbose {
         eprintln!("Input size: {} bytes", data.len());
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     // PHASE 1: String Extraction
     // ========================================
     
-    let candidates = extract_strings_simple(data, &extraction_config);
+    let candidates = extract_strings(data, &extraction_config);
 
     if args.verbose {
         eprintln!("Extracted {} string candidates", candidates.len());
@@ -75,6 +75,10 @@ fn main() -> Result<()> {
         .into_iter()
         .map(AnnotatedString::from_candidate)
         .collect();
+
+    if args.verbose {
+        eprintln!("After converting to AnnotatedString: {} strings", strings.len());
+    }
 
     if strings.is_empty() && !args.quiet {
         eprintln!("No strings found matching the criteria.");
@@ -157,20 +161,22 @@ fn main() -> Result<()> {
     let mut stats = ExtractionStats::new();
     stats.add_strings(&strings);
 
-    if args.json {
-        // JSON output
-        let json_output = formatter.format_json_array(&strings, Some(data));
-        println!("{}", json_output);
-    } else {
-        // Text output
-        for s in &strings {
-            let formatted = formatter.format_string(s, Some(data));
-            println!("{}", formatted);
-        }
+    if !args.quiet {
+        if args.json {
+            // JSON output
+            let json_output = formatter.format_json_array(&strings, Some(data));
+            println!("{}", json_output);
+        } else {
+            // Text output
+            for s in &strings {
+                let formatted = formatter.format_string(s, Some(data));
+                println!("{}", formatted);
+            }
 
-        // Print summary if verbose
-        if args.verbose {
-            print_summary(&stats, input_name, &pipeline_config);
+            // Print summary if verbose
+            if args.verbose {
+                print_summary(&stats, input_name, &pipeline_config);
+            }
         }
     }
 

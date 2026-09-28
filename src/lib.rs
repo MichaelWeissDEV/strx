@@ -14,7 +14,7 @@ pub mod types;
 
 // Re-export main types for convenience
 pub use cli::Args;
-pub use extract::{ExtractionConfig, extract_strings, extract_strings_simple};
+pub use extract::{extract_strings, ExtractionConfig};
 pub use heuristics::{HeuristicFilter, HeuristicPipeline, PipelineBuilder};
 pub use io::InputSource;
 pub use output::{OutputFormatter, OutputFormatterBuilder, ExtractionStats, print_summary};

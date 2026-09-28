@@ -94,13 +94,13 @@ impl StringExtractor {
     /// Process a slice of bytes and emit string candidates
     pub fn process(&mut self, data: &[u8]) -> Vec<StringCandidate> {
         let mut results = Vec::new();
+        let base_offset = self.bytes_processed;
 
-        for (offset, &byte) in data.iter().enumerate() {
-            let absolute_offset = self.bytes_processed + offset;
+        for (idx, &byte) in data.iter().enumerate() {
+            let absolute_offset = base_offset + idx;
 
             // Skip bytes outside the configured range
             if absolute_offset < self.config.start {
-                self.bytes_processed = absolute_offset + 1;
                 continue;
             }
 
@@ -109,15 +109,15 @@ impl StringExtractor {
                 if self.emit_if_valid(&mut results, absolute_offset) {
                     self.state = FsmState::Idle;
                 }
-                self.bytes_processed = absolute_offset + 1;
                 break;
             }
-
-            self.bytes_processed = absolute_offset + 1;
 
             // Process the byte through the FSM
             self.process_byte(byte, absolute_offset, &mut results);
         }
+
+        // Update bytes_processed after processing the entire chunk
+        self.bytes_processed = base_offset + data.len();
 
         results
     }
@@ -363,7 +363,7 @@ impl StringExtractor {
 
         let bytes: Vec<u8> = self.current_bytes.drain(..).collect();
         
-        results.push(StringCandidate::new(
+        results.push(StringCandidate::new_simple(
             self.current_start,
             length,
             bytes,
@@ -397,7 +397,7 @@ impl StringExtractor {
             };
 
             let bytes: Vec<u8> = self.current_bytes.drain(..).collect();
-            results.push(StringCandidate::new(
+            results.push(StringCandidate::new_simple(
                 self.current_start,
                 bytes.len(),
                 bytes,
@@ -413,12 +413,14 @@ impl StringExtractor {
     }
 }
 
-/// Check if a byte is ASCII printable or common whitespace
+/// Check if a byte is ASCII printable (GNU strings compatible)
 /// ASCII printable: 0x20 to 0x7E (space to tilde)
-/// Plus common whitespace: \t (0x09), \n (0x0A), \r (0x0D)
+/// Note: Newlines, tabs, and carriage returns are NOT considered printable
+/// by default. This matches GNU strings behavior where these characters
+/// typically terminate strings.
 #[inline]
 fn is_ascii_printable(byte: u8) -> bool {
-    byte >= 0x20 && byte <= 0x7E || byte == b'\t' || byte == b'\n' || byte == b'\r'
+    byte >= 0x20 && byte <= 0x7E
 }
 
 /// Check if a byte is a valid UTF-8 continuation byte
@@ -480,19 +482,18 @@ impl SimpleStringExtractor {
 
     /// Process a slice of bytes
     pub fn process(&mut self, data: &[u8]) {
+        let base_offset = self.bytes_processed;
+
         for (idx, &byte) in data.iter().enumerate() {
-            let offset = self.bytes_processed + idx;
+            let offset = base_offset + idx;
 
             // Skip out-of-range bytes
             if offset < self.config.start {
                 continue;
             }
             if offset >= self.config.end {
-                self.bytes_processed = offset + 1;
                 break;
             }
-
-            self.bytes_processed = offset + 1;
 
             // Check all possible encodings
             let is_ascii = is_ascii_printable(byte);
@@ -531,6 +532,9 @@ impl SimpleStringExtractor {
                 self.current_bytes.clear();
             }
         }
+
+        // Update bytes_processed after processing the entire chunk
+        self.bytes_processed = base_offset + data.len();
     }
 
     fn detect_encoding(&self) -> EncodingType {
@@ -547,7 +551,7 @@ impl SimpleStringExtractor {
             return;
         }
         
-        let candidate = StringCandidate::new(
+        let candidate = StringCandidate::new_simple(
             self.current_offset,
             self.current_bytes.len(),
             std::mem::take(&mut self.current_bytes),
@@ -573,18 +577,23 @@ impl SimpleStringExtractor {
 }
 
 /// Check if a byte could be part of a UTF-8 sequence
+/// This is a simplified check for potential UTF-8 bytes.
+/// For full validation, see validate_utf8() function.
 #[inline]
 fn is_utf8_printable_byte(byte: u8) -> bool {
     // Single-byte UTF-8 (same as ASCII)
     if byte < 0x80 {
         return is_ascii_printable(byte);
     }
-    // Continuation bytes
+    // Continuation bytes (0x80-0xBF) - only valid after a start byte
+    // For now, we accept them as they might be part of a multi-byte sequence
     if is_utf8_continuation(byte) {
         return true;
     }
     // Start of multi-byte sequences
-    if (0xC0..0xF8).contains(&byte) {
+    // Valid ranges: C2-DF (2-byte), E0-EF (3-byte), F0-F4 (4-byte)
+    // Exclude C0-C1 (overlong), F5-FF (invalid)
+    if (0xC2..=0xDF).contains(&byte) || (0xE0..=0xEF).contains(&byte) || (0xF0..=0xF4).contains(&byte) {
         return true;
     }
     false
@@ -592,14 +601,14 @@ fn is_utf8_printable_byte(byte: u8) -> bool {
 
 /// High-performance extractor optimized for the common case
 /// Uses SIMD-optimized checks where possible
-pub fn extract_strings_simple(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
+pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
     let mut extractor = SimpleStringExtractor::new(config.clone());
     extractor.process(data);
     extractor.finish()
 }
 
 /// Extract strings from a byte slice with full encoding detection
-pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
+fn _extract_strings_fsm(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
     let mut extractor = StringExtractor::new(config.clone());
     extractor.process(data);
     let mut results = extractor.finish();
@@ -640,7 +649,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
                 if in_string && current.len() / 2 >= config.min_len {
                     let offset = current_start;
                     let length = current.len();
-                    le_results.push(StringCandidate::new(
+                    le_results.push(StringCandidate::new_simple(
                         offset,
                         length,
                         current.clone(),
@@ -654,7 +663,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
 
         // Handle last string
         if in_string && current.len() / 2 >= config.min_len {
-            le_results.push(StringCandidate::new(
+            le_results.push(StringCandidate::new_simple(
                 current_start,
                 current.len(),
                 current,
@@ -684,7 +693,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
                 current.push(data[i + 1]);
             } else {
                 if in_string && current.len() / 2 >= config.min_len {
-                    be_results.push(StringCandidate::new(
+                    be_results.push(StringCandidate::new_simple(
                         current_start,
                         current.len(),
                         current.clone(),
@@ -698,7 +707,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
 
         // Handle last string
         if in_string && current.len() / 2 >= config.min_len {
-            be_results.push(StringCandidate::new(
+            be_results.push(StringCandidate::new_simple(
                 current_start,
                 current.len(),
                 current,
@@ -754,7 +763,7 @@ mod tests {
 
         let strings = extract_strings_simple(data, &config);
         assert_eq!(strings.len(), 1);
-        assert_eq!(strings[0].length, 8); // "abcdefgh"
+        assert_eq!(strings[0].byte_len, 8); // "abcdefgh"
     }
 
     #[test]
@@ -805,15 +814,6 @@ impl CandidateContent for StringCandidate {
             _ => {
                 // For UTF-16, we'll do a simple conversion
                 // This is a simplified version
-                let mut result = String::new();
-                for i in (0..self.raw_bytes.len() - 1).step_by(2) {
-                    let codepoint = u16::from_le_bytes([self.raw_bytes[i], self.raw_bytes[i + 1]]);
-                    if let Some(c) = char::from_u32(codepoint as u32) {
-                        result.push(c);
-                    }
-                }
-                // We need to return a &str, but we have a String
-                // This is a limitation of the test helper
                 ""
             }
         }

@@ -249,7 +249,7 @@ impl DictionaryMatcher {
         }
     }
 
-    /// Load dictionary from file
+    /// Load dictionary from file and add words to the collection
     pub fn load_dictionary<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -263,22 +263,39 @@ impl DictionaryMatcher {
             }
         }
 
-        self.words.extend(words.clone());
-
-        // Build Aho-Corasick automaton
-        let automaton = AhoCorasickBuilder::new()
-            .kind(Some(AhoCorasickKind::DFA))
-            .build(&words)?;
-
-        self.automaton = Some(automaton);
+        self.words.extend(words);
         Ok(())
     }
 
-    /// Load multiple dictionaries
+    /// Load multiple dictionaries and build a single automaton
     pub fn load_dictionaries(&mut self, paths: &[impl AsRef<Path>]) -> Result<()> {
+        // Clear existing words and automaton
+        self.words.clear();
+        self.automaton = None;
+        
+        // Load all dictionaries
         for path in paths {
             self.load_dictionary(path)?;
         }
+        
+        // Deduplicate words
+        let mut unique_words: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for word in &self.words {
+            if !seen.contains(word) {
+                seen.insert(word.clone());
+                unique_words.push(word.clone());
+            }
+        }
+        
+        // Build single Aho-Corasick automaton from all words
+        if !unique_words.is_empty() {
+            let automaton = AhoCorasickBuilder::new()
+                .kind(Some(AhoCorasickKind::DFA))
+                .build(&unique_words)?;
+            self.automaton = Some(automaton);
+        }
+        
         Ok(())
     }
 
@@ -398,32 +415,13 @@ impl HeuristicFilter for SmartPeeker {
         let content = s.content.clone();
 
         // Try Base64 decoding
-        if Self::is_base64_like(&content) {
-            if let Some(decoded) = self.decode_base64(&content) {
-                if Self::has_low_entropy(&decoded) {
-                    // Replace content with decoded version
-                    s.content = decoded;
-                    s.add_tag(Tag::Base64Decoded);
-                    // Update raw_bytes to match new content
-                    s.candidate.raw_bytes = s.content.as_bytes().to_vec();
-                    s.candidate.length = s.content.len();
-                    return true;
-                }
-            }
-        }
-
-        // Try Hex decoding
-        if Self::is_hex_like(&content) {
-            if let Some(decoded) = Self::decode_hex(&content) {
-                if Self::has_low_entropy(&decoded) {
-                    s.content = decoded;
-                    s.add_tag(Tag::HexDecoded);
-                    s.candidate.raw_bytes = s.content.as_bytes().to_vec();
-                    s.candidate.length = s.content.len();
-                    return true;
-                }
-            }
-        }
+        // NOTE: SmartPeeker is temporarily disabled to prevent mutation of original evidence
+        // as per P1-8 requirement: "Raw Evidence niemals verändern"
+        // When re-enabled, it should:
+        // 1. Store derived content separately (e.g., in a derived_content field)
+        // 2. Never modify candidate.offset, candidate.byte_len, candidate.raw_bytes
+        // 3. Add tags for decoded content
+        // For now, this is a no-op to maintain correctness
 
         true // Smart peeking never discards
     }
@@ -528,7 +526,7 @@ impl MinLengthFilter {
 
 impl HeuristicFilter for MinLengthFilter {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        s.candidate.length >= self.min_len
+        s.candidate.byte_len >= self.min_len
     }
 
     fn name(&self) -> &str {
@@ -549,7 +547,7 @@ impl MaxLengthFilter {
 
 impl HeuristicFilter for MaxLengthFilter {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        s.candidate.length <= self.max_len
+        s.candidate.byte_len <= self.max_len
     }
 
     fn name(&self) -> &str {
@@ -610,25 +608,26 @@ impl PipelineBuilder {
     pub fn build(self) -> Result<HeuristicPipeline> {
         let mut pipeline = HeuristicPipeline::new();
 
-        // Add entropy checker
+        // Add smart peeker first (decode/normalize)
+        // Note: Temporarily disabled for P0 correctness testing
+        // pipeline.add_filter(SmartPeeker::new());
+
+        // Add entropy checker (analyze original content)
         pipeline.add_filter(EntropyChecker::with_defaults());
 
-        // Add regex tagger
+        // Add regex tagger (analyze original content)
         let mut tagger = RegexTagger::with_defaults();
         tagger.add_custom_patterns(&self.custom_regex);
         pipeline.add_filter(tagger);
 
-        // Add dictionary matcher
+        // Add dictionary matcher (analyze original content)
         if !self.dictionary_paths.is_empty() {
             let mut matcher = DictionaryMatcher::new(self.fuzzy_matching);
             matcher.load_dictionaries(&self.dictionary_paths)?;
             pipeline.add_filter(matcher);
         }
 
-        // Add smart peeker
-        pipeline.add_filter(SmartPeeker::new());
-
-        // Add code tokenizer
+        // Add code tokenizer (analyze original content)
         pipeline.add_filter(CodeTokenizer::with_defaults());
 
         // Add length filters
@@ -757,7 +756,7 @@ mod tests {
     fn test_ipv4_regex() {
         let tagger = RegexTagger::with_defaults();
         let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 13, "192.168.1.1".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 13, "192.168.1.1".as_bytes().to_vec(), EncodingType::Ascii),
         );
         
         // This would normally be done through the pipeline
@@ -773,7 +772,7 @@ mod tests {
         let tagger = RegexTagger::with_defaults();
         let email = "test@example.com";
         let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, email.len(), email.as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, email.len(), email.as_bytes().to_vec(), EncodingType::Ascii),
         );
         
         for (pattern, tag) in &tagger.patterns {

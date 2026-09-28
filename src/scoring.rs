@@ -131,8 +131,8 @@ impl ScoringEngine {
     pub fn score(&self, s: &mut AnnotatedString) {
         let mut score = 0.0f32;
 
-        // Base score: length
-        score += s.candidate.length as f32 * self.config.base_per_char;
+        // Base score: byte length
+        score += s.candidate.byte_len as f32 * self.config.base_per_char;
 
         // Apply tag bonuses
         for tag in &s.tags {
@@ -222,10 +222,10 @@ pub fn sort_strings(strings: &mut Vec<AnnotatedString>, sort_order: crate::types
             strings.sort_by(|a, b| a.candidate.offset.cmp(&b.candidate.offset));
         }
         crate::types::SortOrder::LengthAsc => {
-            strings.sort_by(|a, b| a.candidate.length.cmp(&b.candidate.length));
+            strings.sort_by(|a, b| a.candidate.byte_len.cmp(&b.candidate.byte_len));
         }
         crate::types::SortOrder::LengthDesc => {
-            strings.sort_by(|a, b| b.candidate.length.cmp(&a.candidate.length));
+            strings.sort_by(|a, b| b.candidate.byte_len.cmp(&a.candidate.byte_len));
         }
         crate::types::SortOrder::Score => {
             strings.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
@@ -253,7 +253,7 @@ pub fn process_and_score(
 /// Apply tag-based scoring modifiers
 pub fn apply_tag_scores(strings: &mut Vec<AnnotatedString>, config: &ScoringConfig) {
     for s in strings {
-        let mut score = s.candidate.length as f32 * config.base_per_char;
+        let mut score = s.candidate.byte_len as f32 * config.base_per_char;
 
         for tag in &s.tags {
             match tag {
@@ -303,7 +303,7 @@ mod tests {
 
         // Create a test string with various tags
         let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new(0, 15, "test@example.com".as_bytes().to_vec(), EncodingType::Ascii),
+            StringCandidate::new_simple(0, 15, "test@example.com".as_bytes().to_vec(), EncodingType::Ascii),
         );
         s.add_tag(Tag::Email);
         s.add_tag(Tag::DictionaryMatch);
@@ -320,21 +320,21 @@ mod tests {
         let mut strings = vec![
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 10.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 30.0;
                 s
@@ -353,21 +353,21 @@ mod tests {
         let strings = vec![
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 10.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 30.0;
                 s
@@ -384,21 +384,21 @@ mod tests {
         let mut strings = vec![
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 0.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 50.0;
                 s
             },
             {
                 let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
+                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
                 );
                 s.score = 100.0;
                 s
@@ -420,21 +420,21 @@ mod tests {
 
         let mut strings = vec![
             AnnotatedString::from_candidate(
-                StringCandidate::new(0, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(0, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
             ),
             AnnotatedString::from_candidate(
-                StringCandidate::new(5, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(5, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
             ),
             AnnotatedString::from_candidate(
-                StringCandidate::new(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
             ),
         ];
 
         sort_strings(&mut strings, SortOrder::LengthDesc);
 
-        assert_eq!(strings[0].candidate.length, 15);
-        assert_eq!(strings[1].candidate.length, 10);
-        assert_eq!(strings[2].candidate.length, 5);
+        assert_eq!(strings[0].candidate.byte_len, 15);
+        assert_eq!(strings[1].candidate.byte_len, 10);
+        assert_eq!(strings[2].candidate.byte_len, 5);
     }
 
     #[test]
@@ -443,13 +443,13 @@ mod tests {
 
         let mut strings = vec![
             AnnotatedString::from_candidate(
-                StringCandidate::new(15, 10, "late".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(15, 10, "late".as_bytes().to_vec(), EncodingType::Ascii),
             ),
             AnnotatedString::from_candidate(
-                StringCandidate::new(0, 10, "first".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(0, 10, "first".as_bytes().to_vec(), EncodingType::Ascii),
             ),
             AnnotatedString::from_candidate(
-                StringCandidate::new(5, 10, "middle".as_bytes().to_vec(), EncodingType::Ascii),
+                StringCandidate::new_simple(5, 10, "middle".as_bytes().to_vec(), EncodingType::Ascii),
             ),
         ];
 

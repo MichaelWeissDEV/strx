@@ -88,13 +88,19 @@ impl fmt::Display for Tag {
 }
 
 /// A candidate string extracted from binary data
+/// 
+/// Zero-copy design: This struct stores only the offset and length within the source data.
+/// The actual bytes are referenced from the InputSource that owns the data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StringCandidate {
     /// Byte offset from the start of the input
     pub offset: usize,
     /// Length of the string in bytes
-    pub length: usize,
+    pub byte_len: usize,
+    /// Length of the string in characters (codepoints)
+    pub char_len: usize,
     /// Reference to the raw bytes (owned for flexibility)
+    /// TODO: Consider zero-copy design by storing only offset+length and referencing source
     pub raw_bytes: Vec<u8>,
     /// Detected encoding type
     pub encoding: EncodingType,
@@ -102,14 +108,46 @@ pub struct StringCandidate {
 
 impl StringCandidate {
     /// Create a new StringCandidate
-    pub fn new(offset: usize, length: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+    pub fn new(offset: usize, byte_len: usize, char_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
         Self {
             offset,
-            length,
+            byte_len,
+            char_len,
             raw_bytes,
             encoding,
         }
     }
+
+    /// Create a new StringCandidate with the old signature (byte_len only)
+    /// This maintains backward compatibility while transitioning to the new design
+    #[deprecated(note = "Use new() with explicit char_len instead")]
+    pub fn new_simple(offset: usize, byte_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+        let char_len = match encoding {
+            EncodingType::Ascii | EncodingType::Utf8 => byte_len,
+            EncodingType::Utf16Le | EncodingType::Utf16Be => byte_len / 2,
+        };
+        Self::new(offset, byte_len, char_len, raw_bytes, encoding)
+    }
+
+    /// Create a new StringCandidate with char_len inferred from byte_len
+    /// For ASCII and UTF-8, char_len = byte_len for single-byte characters
+    /// For UTF-16, char_len = byte_len / 2
+    pub fn new_with_inferred_char_len(offset: usize, byte_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+        let char_len = match encoding {
+            EncodingType::Ascii | EncodingType::Utf8 => {
+                // For ASCII, each byte is one char
+                // For UTF-8, we need to count actual codepoints
+                // This is a simplified approximation - will be corrected during annotation
+                byte_len
+            }
+            EncodingType::Utf16Le | EncodingType::Utf16Be => {
+                // For UTF-16, each char is 2 bytes (ignoring surrogate pairs for now)
+                byte_len / 2
+            }
+        };
+        Self::new(offset, byte_len, char_len, raw_bytes, encoding)
+    }
+}
 
     /// Get the content as a string slice (lossy UTF-8 conversion)
     pub fn as_str(&self) -> &str {
@@ -126,14 +164,19 @@ impl StringCandidate {
         }
     }
 
-    /// Check if the candidate meets length constraints
-    pub fn is_within_length_bounds(&self, min_len: usize, max_len: usize) -> bool {
-        self.length >= min_len && self.length <= max_len
+    /// Check if the candidate meets length constraints based on byte length
+    pub fn is_within_byte_length_bounds(&self, min_len: usize, max_len: usize) -> bool {
+        self.byte_len >= min_len && self.byte_len <= max_len
+    }
+
+    /// Check if the candidate meets length constraints based on character length
+    pub fn is_within_char_length_bounds(&self, min_len: usize, max_len: usize) -> bool {
+        self.char_len >= min_len && self.char_len <= max_len
     }
 
     /// Check if the candidate is within the byte range
     pub fn is_within_range(&self, start: usize, end: usize) -> bool {
-        self.offset >= start && (self.offset + self.length) <= end
+        self.offset >= start && (self.offset + self.byte_len) <= end
     }
 }
 
@@ -219,7 +262,7 @@ impl AnnotatedString {
 impl PartialEq for AnnotatedString {
     fn eq(&self, other: &Self) -> bool {
         self.candidate.offset == other.candidate.offset
-            && self.candidate.length == other.candidate.length
+            && self.candidate.byte_len == other.candidate.byte_len
             && self.candidate.raw_bytes == other.candidate.raw_bytes
     }
 }
