@@ -228,7 +228,11 @@ impl RegexTagger {
 impl HeuristicFilter for RegexTagger {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
         for (pattern, tag) in &self.patterns {
-            if pattern.is_match(&s.content) {
+            let matches = std::iter::once(s.content.as_str())
+                .chain(s.derived.iter().map(|d| d.content.as_str()))
+                .any(|c| pattern.is_match(c));
+                
+            if matches {
                 s.add_tag(tag.clone());
             }
         }
@@ -316,27 +320,43 @@ impl DictionaryMatcher {
 
 impl HeuristicFilter for DictionaryMatcher {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        if let Some(automaton) = &self.automaton {
-            // Use Aho-Corasick for exact matching
-            for mat in automaton.find_iter(&s.content.to_lowercase()) {
-                if !mat.is_empty() {
-                    s.add_tag(Tag::DictionaryMatch);
-                    return true;
-                }
-            }
+        let mut is_dict = false;
+        let mut is_fuzzy = false;
 
-            // If fuzzy matching is enabled
-            if self.fuzzy_matching {
-                for word in &self.words {
-                    let distance = levenshtein(&s.content.to_lowercase(), &word.to_lowercase());
-                    if distance <= self.fuzzy_tolerance {
-                        s.add_tag(Tag::FuzzyMatch);
-                        s.add_tag(Tag::DictionaryMatch);
-                        return true;
+        if let Some(automaton) = &self.automaton {
+            for content_str in std::iter::once(s.content.as_str()).chain(s.derived.iter().map(|d| d.content.as_str())) {
+                let lower = content_str.to_lowercase();
+                
+                // Use Aho-Corasick for exact matching
+                if automaton.find_iter(&lower).any(|m| !m.is_empty()) {
+                    is_dict = true;
+                    break;
+                }
+
+                // If fuzzy matching is enabled
+                if self.fuzzy_matching {
+                    for word in &self.words {
+                        let distance = levenshtein(&lower, &word.to_lowercase());
+                        if distance <= self.fuzzy_tolerance {
+                            is_dict = true;
+                            is_fuzzy = true;
+                            break;
+                        }
+                    }
+                    if is_fuzzy {
+                        break;
                     }
                 }
             }
         }
+        
+        if is_dict {
+            s.add_tag(Tag::DictionaryMatch);
+        }
+        if is_fuzzy {
+            s.add_tag(Tag::FuzzyMatch);
+        }
+        
         true // Dictionary matching never discards
     }
 
@@ -542,20 +562,23 @@ impl CodeTokenizer {
 
 impl HeuristicFilter for CodeTokenizer {
     fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        // Check for code patterns
-        for pattern in &self.code_patterns {
-            if pattern.is_match(&s.content) {
-                s.add_tag(Tag::CodeSnippet);
-                break;
+        let mut add_code = false;
+        let mut add_ai = false;
+
+        for c in std::iter::once(s.content.as_str()).chain(s.derived.iter().map(|d| d.content.as_str())) {
+            if !add_code && self.code_patterns.iter().any(|p| p.is_match(c)) {
+                add_code = true;
+            }
+            if !add_ai && self.ai_patterns.iter().any(|p| p.is_match(c)) {
+                add_ai = true;
             }
         }
 
-        // Check for AI patterns
-        for pattern in &self.ai_patterns {
-            if pattern.is_match(&s.content) {
-                s.add_tag(Tag::AiToken);
-                break;
-            }
+        if add_code {
+            s.add_tag(Tag::CodeSnippet);
+        }
+        if add_ai {
+            s.add_tag(Tag::AiToken);
         }
 
         true // Code/AI detection never discards
@@ -661,7 +684,7 @@ impl PipelineBuilder {
 
         // Add smart peeker first (decode/normalize)
         // Note: Temporarily disabled for P0 correctness testing
-        // pipeline.add_filter(SmartPeeker::new());
+        pipeline.add_filter(SmartPeeker::new());
 
         // Add entropy checker (analyze original content)
         pipeline.add_filter(EntropyChecker::with_defaults());
@@ -847,5 +870,42 @@ mod tests {
         assert_eq!(parse_tag_name("IPv4"), Some(Tag::IpV4));
         assert_eq!(parse_tag_name("base64"), Some(Tag::Base64Decoded));
         assert_eq!(parse_tag_name("nonexistent"), None);
+    }
+}
+
+#[cfg(test)]
+mod phase9_tests {
+    use super::*;
+    use crate::types::{EncodingType, StringCandidate};
+
+    #[test]
+    fn test_derived_content_tagging() {
+        let builder = PipelineBuilder::new();
+        let pipeline = builder.build().unwrap();
+
+        // "https://evil.example" base64 encoded -> "aHR0cHM6Ly9ldmlsLmV4YW1wbGU="
+        let base64_str = "aHR0cHM6Ly9ldmlsLmV4YW1wbGU=";
+        
+        let mut s = AnnotatedString {
+            candidate: StringCandidate::new(0, base64_str.len(), base64_str.len(), EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: base64_str.to_string(),
+            derived: Vec::new(),
+        };
+
+        pipeline.process(&mut s);
+
+        // Should have Base64Decoded and Url
+        assert!(s.tags.contains(&Tag::Base64Decoded));
+        assert!(s.tags.contains(&Tag::Url));
+
+        // Original content should still be the base64 string
+        assert_eq!(s.content, base64_str);
+        
+        // The derived content should contain the URL
+        assert_eq!(s.derived.len(), 1);
+        assert_eq!(s.derived[0].kind, crate::types::DerivedKind::Base64);
+        assert_eq!(s.derived[0].content, "https://evil.example");
     }
 }
