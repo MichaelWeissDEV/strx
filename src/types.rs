@@ -140,6 +140,18 @@ impl StringCandidate {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DerivedKind {
+    Base64,
+    Hex,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DerivedContent {
+    pub kind: DerivedKind,
+    pub content: String,
+}
+
 /// An annotated string with metadata, tags, and scoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotatedString {
@@ -151,6 +163,8 @@ pub struct AnnotatedString {
     pub tags: Vec<Tag>,
     /// Decoded content (UTF-8 string)
     pub content: String,
+    /// Additional derived interpretations (e.g. decoded base64/hex)
+    pub derived: Vec<DerivedContent>,
 }
 
 impl AnnotatedString {
@@ -178,6 +192,7 @@ impl AnnotatedString {
             score: 0.0,
             tags: Vec::new(),
             content,
+            derived: Vec::new(),
         }
     }
 

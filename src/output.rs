@@ -558,6 +558,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "hello".to_string(),
+            derived: Vec::new(),
             
         };
 
@@ -574,6 +575,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "hello".to_string(),
+            derived: Vec::new(),
             
         };
 
@@ -591,6 +593,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "192.168.1.1".to_string(),
+            derived: Vec::new(),
             
         };
         s.add_tag(Tag::IpV4);
@@ -617,6 +620,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "hello".to_string(),
+            derived: Vec::new(),
             
         };
         s1.add_tag(Tag::DictionaryMatch);
@@ -626,6 +630,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "world".to_string(),
+            derived: Vec::new(),
             
         };
 

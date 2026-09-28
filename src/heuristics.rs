@@ -774,6 +774,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: "192.168.1.1".to_string(),
+            derived: Vec::new(),
         };
 
         // This would normally be done through the pipeline
@@ -793,6 +794,7 @@ mod tests {
             score: 0.0,
             tags: Vec::new(),
             content: email.to_string(),
+            derived: Vec::new(),
         };
 
         for (pattern, tag) in &tagger.patterns {
