@@ -769,12 +769,12 @@ mod tests {
     #[test]
     fn test_ipv4_regex() {
         let tagger = RegexTagger::with_defaults();
-        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            13,
-            "192.168.1.1".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let s = AnnotatedString {
+            candidate: StringCandidate::new(0, 13, 13, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "192.168.1.1".to_string(),
+        };
 
         // This would normally be done through the pipeline
         for (pattern, tag) in &tagger.patterns {
@@ -788,12 +788,12 @@ mod tests {
     fn test_email_regex() {
         let tagger = RegexTagger::with_defaults();
         let email = "test@example.com";
-        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            email.len(),
-            email.as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let s = AnnotatedString {
+            candidate: StringCandidate::new(0, email.len(), email.len(), EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: email.to_string(),
+        };
 
         for (pattern, tag) in &tagger.patterns {
             if pattern.is_match(&s.content) {

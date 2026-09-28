@@ -99,9 +99,6 @@ pub struct StringCandidate {
     pub byte_len: usize,
     /// Length of the string in characters (codepoints)
     pub char_len: usize,
-    /// Reference to the raw bytes (owned for flexibility)
-    /// TODO: Consider zero-copy design by storing only offset+length and referencing source
-    pub raw_bytes: Vec<u8>,
     /// Detected encoding type
     pub encoding: EncodingType,
 }
@@ -112,71 +109,19 @@ impl StringCandidate {
         offset: usize,
         byte_len: usize,
         char_len: usize,
-        raw_bytes: Vec<u8>,
         encoding: EncodingType,
     ) -> Self {
         Self {
             offset,
             byte_len,
             char_len,
-            raw_bytes,
             encoding,
         }
     }
 
-    /// Create a new StringCandidate with the old signature (byte_len only)
-    /// This maintains backward compatibility while transitioning to the new design.
-    /// TODO: Remove in favor of new() with explicit char_len.
-    pub fn new_simple(
-        offset: usize,
-        byte_len: usize,
-        raw_bytes: Vec<u8>,
-        encoding: EncodingType,
-    ) -> Self {
-        let char_len = match encoding {
-            EncodingType::Ascii | EncodingType::Utf8 => byte_len,
-            EncodingType::Utf16Le | EncodingType::Utf16Be => byte_len / 2,
-        };
-        Self::new(offset, byte_len, char_len, raw_bytes, encoding)
-    }
-
-    /// Create a new StringCandidate with char_len inferred from byte_len
-    /// For ASCII and UTF-8, char_len = byte_len for single-byte characters
-    /// For UTF-16, char_len = byte_len / 2
-    pub fn new_with_inferred_char_len(
-        offset: usize,
-        byte_len: usize,
-        raw_bytes: Vec<u8>,
-        encoding: EncodingType,
-    ) -> Self {
-        let char_len = match encoding {
-            EncodingType::Ascii | EncodingType::Utf8 => {
-                // For ASCII, each byte is one char
-                // For UTF-8, we need to count actual codepoints
-                // This is a simplified approximation - will be corrected during annotation
-                byte_len
-            }
-            EncodingType::Utf16Le | EncodingType::Utf16Be => {
-                // For UTF-16, each char is 2 bytes (ignoring surrogate pairs for now)
-                byte_len / 2
-            }
-        };
-        Self::new(offset, byte_len, char_len, raw_bytes, encoding)
-    }
-
-    /// Get the content as a string slice (lossy UTF-8 conversion)
-    pub fn as_str(&self) -> &str {
-        // For ASCII and UTF-8, we can use from_utf8_lossy
-        // For UTF-16, we need proper decoding
-        match self.encoding {
-            EncodingType::Ascii | EncodingType::Utf8 => {
-                std::str::from_utf8(&self.raw_bytes).unwrap_or("")
-            }
-            EncodingType::Utf16Le | EncodingType::Utf16Be => {
-                // Attempt UTF-16 decoding - return empty as we can't return owned String
-                ""
-            }
-        }
+    /// Safely get the bytes of this candidate from a source slice
+    pub fn bytes<'a>(&self, source: &'a [u8]) -> Option<&'a [u8]> {
+        source.get(self.offset..self.offset.checked_add(self.byte_len)?)
     }
 
     /// Check if the candidate meets length constraints based on byte length
@@ -206,26 +151,26 @@ pub struct AnnotatedString {
     pub tags: Vec<Tag>,
     /// Decoded content (UTF-8 string)
     pub content: String,
-    /// Optional context bytes for hex dump
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_bytes: Option<Vec<u8>>,
 }
 
 impl AnnotatedString {
     /// Create a new AnnotatedString from a candidate
-    pub fn from_candidate(candidate: StringCandidate) -> Self {
-        let content = match candidate.encoding {
-            EncodingType::Ascii | EncodingType::Utf8 => {
-                String::from_utf8_lossy(&candidate.raw_bytes).to_string()
-            }
-            EncodingType::Utf16Le => encoding_rs::UTF_16LE
-                .decode(&candidate.raw_bytes)
-                .0
-                .to_string(),
-            EncodingType::Utf16Be => encoding_rs::UTF_16BE
-                .decode(&candidate.raw_bytes)
-                .0
-                .to_string(),
+    pub fn from_candidate(candidate: StringCandidate, source: &[u8]) -> Self {
+        let content = match candidate.bytes(source) {
+            Some(bytes) => match candidate.encoding {
+                EncodingType::Ascii | EncodingType::Utf8 => {
+                    String::from_utf8_lossy(bytes).to_string()
+                }
+                EncodingType::Utf16Le => encoding_rs::UTF_16LE
+                    .decode(bytes)
+                    .0
+                    .to_string(),
+                EncodingType::Utf16Be => encoding_rs::UTF_16BE
+                    .decode(bytes)
+                    .0
+                    .to_string(),
+            },
+            None => String::new(),
         };
 
         Self {
@@ -233,7 +178,6 @@ impl AnnotatedString {
             score: 0.0,
             tags: Vec::new(),
             content,
-            context_bytes: None,
         }
     }
 
@@ -274,7 +218,7 @@ impl PartialEq for AnnotatedString {
     fn eq(&self, other: &Self) -> bool {
         self.candidate.offset == other.candidate.offset
             && self.candidate.byte_len == other.candidate.byte_len
-            && self.candidate.raw_bytes == other.candidate.raw_bytes
+            
     }
 }
 

@@ -553,12 +553,13 @@ mod tests {
     #[test]
     fn test_format_text() {
         let formatter = OutputFormatter::new().with_colors(false);
-        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            5,
-            "hello".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let s = AnnotatedString {
+            candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "hello".to_string(),
+            
+        };
 
         let formatted = formatter.format_string(&s, None);
         assert!(formatted.contains("0 "));
@@ -568,12 +569,13 @@ mod tests {
     #[test]
     fn test_format_json() {
         let formatter = OutputFormatter::new().with_json(true);
-        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            5,
-            "hello".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let s = AnnotatedString {
+            candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "hello".to_string(),
+            
+        };
 
         let formatted = formatter.format_string(&s, None);
         assert!(formatted.contains("\"offset\""));
@@ -584,12 +586,13 @@ mod tests {
     #[test]
     fn test_format_with_tags() {
         let formatter = OutputFormatter::new().with_colors(false);
-        let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            13,
-            "192.168.1.1".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let mut s = AnnotatedString {
+            candidate: StringCandidate::new(0, 13, 13, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "192.168.1.1".to_string(),
+            
+        };
         s.add_tag(Tag::IpV4);
         s.add_tag(Tag::DictionaryMatch);
 
@@ -609,20 +612,22 @@ mod tests {
     fn test_extraction_stats() {
         let mut stats = ExtractionStats::new();
 
-        let mut s1 = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            0,
-            5,
-            "hello".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let mut s1 = AnnotatedString {
+            candidate: StringCandidate::new(0, 5, 5, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "hello".to_string(),
+            
+        };
         s1.add_tag(Tag::DictionaryMatch);
 
-        let s2 = AnnotatedString::from_candidate(StringCandidate::new_simple(
-            5,
-            5,
-            "world".as_bytes().to_vec(),
-            EncodingType::Ascii,
-        ));
+        let s2 = AnnotatedString {
+            candidate: StringCandidate::new(5, 5, 5, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "world".to_string(),
+            
+        };
 
         stats.add_strings(&[s1, s2]);
 

@@ -35,7 +35,7 @@ pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCand
 
     // Sort by offset and deduplicate
     results.sort_by_key(|a| a.offset);
-    results.dedup_by(|a, b| a.offset == b.offset && a.raw_bytes == b.raw_bytes);
+    results.dedup_by(|a, b| a.offset == b.offset && a.byte_len == b.byte_len);
 
     results
 }
@@ -68,14 +68,7 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
             } else {
                 EncodingType::Ascii
             };
-            let raw_bytes = data[start_offset..start_offset + byte_len].to_vec();
-            results.push(StringCandidate::new(
-                start_offset,
-                byte_len,
-                char_len,
-                raw_bytes,
-                encoding,
-            ));
+            results.push(StringCandidate::new(start_offset, byte_len, char_len, encoding));
         }
         *in_string = false;
         *has_non_ascii = false;
@@ -215,13 +208,7 @@ fn extract_utf16(
             } else {
                 EncodingType::Utf16Be
             };
-            results.push(StringCandidate::new(
-                start,
-                bytes.len(),
-                *chars,
-                bytes.clone(),
-                encoding,
-            ));
+            results.push(StringCandidate::new(start, bytes.len(), *chars, encoding));
         }
         *in_string = false;
         bytes.clear();
@@ -314,10 +301,10 @@ fn extract_utf16(
 mod tests {
     use super::*;
 
-    fn candidate_str(c: &StringCandidate) -> String {
+    fn candidate_str<'a>(c: &'a StringCandidate, source: &'a [u8]) -> String {
         match c.encoding {
             EncodingType::Ascii | EncodingType::Utf8 => {
-                String::from_utf8_lossy(&c.raw_bytes).to_string()
+                String::from_utf8_lossy(c.bytes(source).unwrap_or(b"")).to_string()
             }
             _ => String::new(),
         }
@@ -410,9 +397,9 @@ mod tests {
             .filter(|s| s.encoding == EncodingType::Ascii)
             .collect();
         assert_eq!(strings.len(), 3);
-        assert_eq!(candidate_str(&strings[0]), "Hello, World!");
-        assert_eq!(candidate_str(&strings[1]), "Some");
-        assert_eq!(candidate_str(&strings[2]), "Text");
+        assert_eq!(candidate_str(&strings[0], data), "Hello, World!");
+        assert_eq!(candidate_str(&strings[1], data), "Some");
+        assert_eq!(candidate_str(&strings[2], data), "Text");
     }
 
     #[test]
@@ -422,7 +409,7 @@ mod tests {
 
         let strings = extract_strings(data, &config);
         assert!(!strings.is_empty());
-        assert!(candidate_str(&strings[0]).contains("Hällö"));
+        assert!(candidate_str(&strings[0], data).contains("Hällö"));
     }
 
     #[test]
@@ -467,7 +454,7 @@ mod tests {
             .filter(|s| s.encoding == EncodingType::Ascii)
             .collect();
         assert!(!strings.is_empty());
-        let contents: Vec<String> = strings.iter().map(candidate_str).collect();
+        let contents: Vec<String> = strings.iter().map(|c| candidate_str(c, data)).collect();
         assert!(contents.iter().any(|c| c.contains("Target")));
     }
 

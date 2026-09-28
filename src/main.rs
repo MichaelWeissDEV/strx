@@ -77,7 +77,7 @@ fn main() -> Result<()> {
 
     let mut strings: Vec<AnnotatedString> = candidates
         .into_iter()
-        .map(AnnotatedString::from_candidate)
+        .map(|c| AnnotatedString::from_candidate(c, data))
         .collect();
 
     if args.verbose {
