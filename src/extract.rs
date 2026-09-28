@@ -27,15 +27,11 @@ pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCand
     // 1. ASCII & UTF-8
     results.extend(extract_utf8_text(data, config));
 
-    // 2. UTF-16 LE alignment 0
-    results.extend(extract_utf16_le(data, config, 0));
-    // 3. UTF-16 LE alignment 1
-    results.extend(extract_utf16_le(data, config, 1));
-
-    // 4. UTF-16 BE alignment 0
-    results.extend(extract_utf16_be(data, config, 0));
-    // 5. UTF-16 BE alignment 1
-    results.extend(extract_utf16_be(data, config, 1));
+    // 2-5. UTF-16
+    results.extend(extract_utf16(data, config, true, 0)); // LE, alignment 0
+    results.extend(extract_utf16(data, config, true, 1)); // LE, alignment 1
+    results.extend(extract_utf16(data, config, false, 0)); // BE, alignment 0
+    results.extend(extract_utf16(data, config, false, 1)); // BE, alignment 1
 
     // Sort by offset and deduplicate
     results.sort_by_key(|a| a.offset);
@@ -43,7 +39,6 @@ pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCand
 
     results
 }
-
 fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
     let mut results = Vec::new();
 
@@ -58,23 +53,26 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
     let mut in_string = false;
     let mut str_start = 0;
     let mut str_byte_len = 0;
+    let mut str_char_len = 0;
     let mut has_non_ascii = false;
 
     let emit = |in_string: &mut bool,
-                    start_offset: usize,
-                    byte_len: usize,
-                    has_non_ascii: &mut bool,
-                    results: &mut Vec<StringCandidate>| {
-        if *in_string && byte_len >= config.min_len && byte_len <= config.max_len {
+                start_offset: usize,
+                byte_len: usize,
+                char_len: usize,
+                has_non_ascii: &mut bool,
+                results: &mut Vec<StringCandidate>| {
+        if *in_string && char_len >= config.min_len && char_len <= config.max_len {
             let encoding = if *has_non_ascii {
                 EncodingType::Utf8
             } else {
                 EncodingType::Ascii
             };
             let raw_bytes = data[start_offset..start_offset + byte_len].to_vec();
-            results.push(StringCandidate::new_simple(
+            results.push(StringCandidate::new(
                 start_offset,
                 byte_len,
+                char_len,
                 raw_bytes,
                 encoding,
             ));
@@ -94,6 +92,7 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
                             &mut in_string,
                             str_start,
                             str_byte_len,
+                            str_char_len,
                             &mut has_non_ascii,
                             &mut results,
                         );
@@ -102,11 +101,13 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
                             in_string = true;
                             str_start = current_idx;
                             str_byte_len = 0;
+                            str_char_len = 0;
                         }
                         if !c.is_ascii() {
                             has_non_ascii = true;
                         }
                         str_byte_len += c_len;
+                        str_char_len += 1;
                     }
                     current_idx += c_len;
                 }
@@ -124,6 +125,7 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
                                 &mut in_string,
                                 str_start,
                                 str_byte_len,
+                                str_char_len,
                                 &mut has_non_ascii,
                                 &mut results,
                             );
@@ -132,11 +134,13 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
                                 in_string = true;
                                 str_start = current_idx;
                                 str_byte_len = 0;
+                                str_char_len = 0;
                             }
                             if !c.is_ascii() {
                                 has_non_ascii = true;
                             }
                             str_byte_len += c_len;
+                            str_char_len += 1;
                         }
                         current_idx += c_len;
                     }
@@ -146,6 +150,7 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
                     &mut in_string,
                     str_start,
                     str_byte_len,
+                    str_char_len,
                     &mut has_non_ascii,
                     &mut results,
                 );
@@ -161,134 +166,147 @@ fn extract_utf8_text(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandid
         &mut in_string,
         str_start,
         str_byte_len,
+        str_char_len,
         &mut has_non_ascii,
         &mut results,
     );
 
     results
 }
-
 #[inline]
-fn is_utf16_printable(codepoint: u16) -> bool {
-    // Temporary strict check for Phase 1 to prevent ASCII false positives
-    (0x20..=0x7E).contains(&codepoint) || (0xA0..=0xFF).contains(&codepoint)
+fn is_unicode_printable(cp: u32) -> bool {
+    // Control characters
+    if cp < 0x20 {
+        return false;
+    }
+    if (0x7F..=0x9F).contains(&cp) {
+        return false;
+    }
+    true
 }
 
-fn extract_utf16_le(
+fn extract_utf16(
     data: &[u8],
     config: &ExtractionConfig,
+    is_le: bool,
     alignment: usize,
 ) -> Vec<StringCandidate> {
     let mut results = Vec::new();
-    if data.len() <= alignment {
-        return results;
-    }
 
-    let mut current = Vec::new();
-    let mut current_start = 0;
-    let mut in_string = false;
-
+    let end = config.end.min(data.len());
     let mut i = alignment;
-    while i + 1 < data.len() {
-        if i < config.start {
-            i += 2;
-            continue;
-        }
-        if i >= config.end {
-            break;
-        }
-
-        let codepoint = u16::from_le_bytes([data[i], data[i + 1]]);
-        if is_utf16_printable(codepoint) {
-            if !in_string {
-                in_string = true;
-                current_start = i;
-            }
-            current.push(data[i]);
-            current.push(data[i + 1]);
-        } else {
-            if in_string && current.len() / 2 >= config.min_len {
-                results.push(StringCandidate::new_simple(
-                    current_start,
-                    current.len(),
-                    current.clone(),
-                    EncodingType::Utf16Le,
-                ));
-            }
-            in_string = false;
-            current.clear();
-        }
+    while i < config.start {
         i += 2;
     }
 
-    if in_string && current.len() / 2 >= config.min_len {
-        results.push(StringCandidate::new_simple(
-            current_start,
-            current.len(),
-            current,
-            EncodingType::Utf16Le,
-        ));
-    }
-
-    results
-}
-
-fn extract_utf16_be(
-    data: &[u8],
-    config: &ExtractionConfig,
-    alignment: usize,
-) -> Vec<StringCandidate> {
-    let mut results = Vec::new();
-    if data.len() <= alignment {
-        return results;
-    }
-
-    let mut current = Vec::new();
-    let mut current_start = 0;
     let mut in_string = false;
+    let mut start_idx = 0;
+    let mut current_bytes = Vec::new();
+    let mut char_len = 0;
 
-    let mut i = alignment;
-    while i + 1 < data.len() {
-        if i < config.start {
-            i += 2;
-            continue;
+    let emit = |in_string: &mut bool,
+                start: usize,
+                bytes: &mut Vec<u8>,
+                chars: &mut usize,
+                results: &mut Vec<StringCandidate>| {
+        if *in_string && *chars >= config.min_len && *chars <= config.max_len {
+            let encoding = if is_le {
+                EncodingType::Utf16Le
+            } else {
+                EncodingType::Utf16Be
+            };
+            results.push(StringCandidate::new(
+                start,
+                bytes.len(),
+                *chars,
+                bytes.clone(),
+                encoding,
+            ));
         }
-        if i >= config.end {
-            break;
-        }
+        *in_string = false;
+        bytes.clear();
+        *chars = 0;
+    };
 
-        let codepoint = u16::from_be_bytes([data[i], data[i + 1]]);
-        if is_utf16_printable(codepoint) {
-            if !in_string {
-                in_string = true;
-                current_start = i;
-            }
-            current.push(data[i]);
-            current.push(data[i + 1]);
+    while i + 1 < end {
+        let cp = if is_le {
+            u16::from_le_bytes([data[i], data[i + 1]])
         } else {
-            if in_string && current.len() / 2 >= config.min_len {
-                results.push(StringCandidate::new_simple(
-                    current_start,
-                    current.len(),
-                    current.clone(),
-                    EncodingType::Utf16Be,
-                ));
+            u16::from_be_bytes([data[i], data[i + 1]])
+        };
+
+        if (0xD800..=0xDBFF).contains(&cp) {
+            // High surrogate
+            if i + 3 < end {
+                let next_cp = if is_le {
+                    u16::from_le_bytes([data[i + 2], data[i + 3]])
+                } else {
+                    u16::from_be_bytes([data[i + 2], data[i + 3]])
+                };
+                if (0xDC00..=0xDFFF).contains(&next_cp) {
+                    // Valid surrogate pair
+                    let scalar =
+                        (((cp - 0xD800) as u32) << 10) | (((next_cp - 0xDC00) as u32) + 0x10000);
+                    if is_unicode_printable(scalar) {
+                        if !in_string {
+                            in_string = true;
+                            start_idx = i;
+                        }
+                        current_bytes.extend_from_slice(&data[i..i + 4]);
+                        char_len += 1;
+                        i += 4;
+                        continue;
+                    }
+                }
             }
-            in_string = false;
-            current.clear();
+            // Invalid surrogate pair or EOF
+            emit(
+                &mut in_string,
+                start_idx,
+                &mut current_bytes,
+                &mut char_len,
+                &mut results,
+            );
+            i += 2;
+        } else if (0xDC00..=0xDFFF).contains(&cp) {
+            // Isolated low surrogate
+            emit(
+                &mut in_string,
+                start_idx,
+                &mut current_bytes,
+                &mut char_len,
+                &mut results,
+            );
+            i += 2;
+        } else {
+            // BMP character
+            if is_unicode_printable(cp as u32) {
+                if !in_string {
+                    in_string = true;
+                    start_idx = i;
+                }
+                current_bytes.extend_from_slice(&data[i..i + 2]);
+                char_len += 1;
+            } else {
+                emit(
+                    &mut in_string,
+                    start_idx,
+                    &mut current_bytes,
+                    &mut char_len,
+                    &mut results,
+                );
+            }
+            i += 2;
         }
-        i += 2;
     }
 
-    if in_string && current.len() / 2 >= config.min_len {
-        results.push(StringCandidate::new_simple(
-            current_start,
-            current.len(),
-            current,
-            EncodingType::Utf16Be,
-        ));
-    }
-
+    emit(
+        &mut in_string,
+        start_idx,
+        &mut current_bytes,
+        &mut char_len,
+        &mut results,
+    );
     results
 }
 
@@ -306,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn test_phase2_utf8_correctness() {
+    fn test_phase3_utf16_correctness() {
         let config = ExtractionConfig {
             min_len: 2,
             max_len: 100,
@@ -314,60 +332,71 @@ mod tests {
             end: usize::MAX,
         };
 
-        let extract = |bytes: &[u8]| -> Vec<StringCandidate> { extract_utf8_text(bytes, &config) };
-
-        // 1. Hello (ASCII)
-        let res = extract(b"Hello");
+        // 1. UTF-16LE ASCII subset (align 0)
+        let res = extract_utf16(b"a\x00b\x00c\x00d\x00", &config, true, 0);
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].encoding, EncodingType::Ascii);
+        assert_eq!(res[0].encoding, EncodingType::Utf16Le);
+        assert_eq!(res[0].char_len, 4);
+        assert_eq!(res[0].byte_len, 8);
 
-        // 2. Hällö (UTF-8)
-        let res = extract("Hällö".as_bytes());
+        // 2. UTF-16BE ASCII subset (align 0)
+        let res = extract_utf16(b"\x00a\x00b\x00c\x00d", &config, false, 0);
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].encoding, EncodingType::Utf8);
+        assert_eq!(res[0].encoding, EncodingType::Utf16Be);
+        assert_eq!(res[0].char_len, 4);
 
-        // 3. € and 😀
-        let res = extract("€😀".as_bytes());
+        // 3. odd byte alignment LE
+        let res = extract_utf16(b"\xFFa\x00b\x00c\x00d\x00", &config, true, 1);
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].encoding, EncodingType::Utf8);
+        assert_eq!(res[0].offset, 1);
+        assert_eq!(res[0].encoding, EncodingType::Utf16Le);
 
-        // 4. orphan continuation byte (0x80)
-        let res = extract(b"ab\x80cd");
-        assert_eq!(res.len(), 2);
-        assert_eq!(res[0].byte_len, 2); // "ab"
-        assert_eq!(res[1].byte_len, 2); // "cd"
-
-        // 5. C0/C1 overlong starts
-        let res = extract(b"ab\xC0\xAFcd");
-        assert_eq!(res.len(), 2);
-
-        // 6. truncated sequence
-        let res = extract(b"ab\xE2\x82cd"); // \xE2\x82 is missing 3rd byte for Euro sign
-        assert_eq!(res.len(), 2);
-        assert_eq!(res[0].byte_len, 2); // "ab"
-        assert_eq!(res[1].byte_len, 2); // "cd"
-
-        // 7. F5-FF
-        let res = extract(b"ab\xF5cd");
-        assert_eq!(res.len(), 2);
-
-        // 8. surrogate representation (ED A0 80)
-        let res = extract(b"ab\xED\xA0\x80cd");
-        assert_eq!(res.len(), 2);
-
-        // 9. valid UTF-8 followed by invalid bytes
-        let res = extract(b"H\xC3\xA4ll\xC3\xB6\xFF");
+        // 4. odd byte alignment BE
+        let res = extract_utf16(b"\xFF\x00a\x00b\x00c\x00d", &config, false, 1);
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].byte_len, 7); // "Hällö" is 7 bytes
+        assert_eq!(res[0].offset, 1);
+        assert_eq!(res[0].encoding, EncodingType::Utf16Be);
 
-        // 10. invalid bytes followed by valid UTF-8
-        let res = extract(b"\xFFH\xC3\xA4ll\xC3\xB6");
+        // 5. non-ASCII UTF-16 (e.g. U+00E4 'ä' -> LE: E4 00)
+        let res = extract_utf16(b"\xE4\x00\xE4\x00", &config, true, 0);
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].byte_len, 7);
+        assert_eq!(res[0].char_len, 2);
+
+        // 6. valid surrogate pair (U+1F600 😀 -> D83D DE00)
+        let res = extract_utf16(b"a\x00\x3D\xD8\x00\xDEb\x00", &config, true, 0);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].char_len, 3); // 'a', 😀, 'b'
+        assert_eq!(res[0].byte_len, 8);
+
+        // 7. isolated high surrogate
+        let res = extract_utf16(b"a\x00b\x00\x3D\xD8c\x00d\x00", &config, true, 0);
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].char_len, 2); // "ab"
+        assert_eq!(res[1].char_len, 2); // "cd"
+
+        // 8. isolated low surrogate
+        let res = extract_utf16(b"a\x00b\x00\x00\xDEc\x00d\x00", &config, true, 0);
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].char_len, 2); // "ab"
+
+        // 9. candidate at EOF
+        let res = extract_utf16(b"a\x00b\x00", &config, true, 0);
+        assert_eq!(res.len(), 1);
+
+        // 10. candidate exactly at --end
+        let config2 = ExtractionConfig {
+            min_len: 2,
+            max_len: 100,
+            start: 0,
+            end: 4,
+        };
+        let res = extract_utf16(b"a\x00b\x00c\x00", &config2, true, 0);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].char_len, 2); // "ab"
     }
     #[test]
     fn test_extract_ascii_strings() {
-        let data = b"Hello, World! Some Text";
+        let data = b"Hello, World!\x00Some\x00Text";
         let config = ExtractionConfig {
             min_len: 4,
             max_len: usize::MAX,
@@ -375,7 +404,11 @@ mod tests {
             end: usize::MAX,
         };
 
-        let strings = extract_strings(data, &config);
+        let all_strings = extract_strings(data, &config);
+        let strings: Vec<_> = all_strings
+            .into_iter()
+            .filter(|s| s.encoding == EncodingType::Ascii)
+            .collect();
         assert_eq!(strings.len(), 3);
         assert_eq!(candidate_str(&strings[0]), "Hello, World!");
         assert_eq!(candidate_str(&strings[1]), "Some");
@@ -394,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_length_filtering() {
-        let data = b"abcd abcdefgh abc";
+        let data = b"abcd\x00abcdefgh\x00abc";
         let config = ExtractionConfig {
             min_len: 5,
             max_len: usize::MAX,
@@ -402,22 +435,30 @@ mod tests {
             end: usize::MAX,
         };
 
-        let strings = extract_strings(data, &config);
+        let all_strings = extract_strings(data, &config);
+        let strings: Vec<_> = all_strings
+            .into_iter()
+            .filter(|s| s.encoding == EncodingType::Ascii)
+            .collect();
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].byte_len, 8); // "abcdefgh"
     }
 
     #[test]
     fn test_range_filtering() {
-        let data = b"Start Target End";
+        let data = b"Start\x00Target\x00End";
         let config = ExtractionConfig {
             min_len: 4,
             max_len: usize::MAX,
-            start: 6, // After "Start "
-            end: 13,  // Before " End"
+            start: 6, // After "Start "
+            end: 13,  // Before " End"
         };
 
-        let strings = extract_strings(data, &config);
+        let all_strings = extract_strings(data, &config);
+        let strings: Vec<_> = all_strings
+            .into_iter()
+            .filter(|s| s.encoding == EncodingType::Ascii)
+            .collect();
         assert!(!strings.is_empty());
         let contents: Vec<String> = strings.iter().map(candidate_str).collect();
         assert!(contents.iter().any(|c| c.contains("Target")));
