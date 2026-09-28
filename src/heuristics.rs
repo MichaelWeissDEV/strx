@@ -170,7 +170,7 @@ impl RegexTagger {
 
         // IPv6 pattern (simplified)
         let ipv6_re = Regex::new(
-            r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$",
+            r"^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$",
         )
         .unwrap();
         tagger.add_pattern(ipv6_re, Tag::IpV6);
@@ -229,7 +229,20 @@ impl HeuristicFilter for RegexTagger {
         for (pattern, tag) in &self.patterns {
             let matches = std::iter::once(s.content.as_str())
                 .chain(s.derived.iter().map(|d| d.content.as_str()))
-                .any(|c| pattern.is_match(c));
+                .any(|c| {
+                    if pattern.is_match(c) {
+                        // Strict validation for IPs
+                        if *tag == Tag::IpV4 {
+                            c.parse::<std::net::Ipv4Addr>().is_ok()
+                        } else if *tag == Tag::IpV6 {
+                            c.parse::<std::net::Ipv6Addr>().is_ok()
+                        } else {
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                });
                 
             if matches {
                 s.add_tag(tag.clone());
@@ -828,20 +841,51 @@ mod tests {
     #[test]
     fn test_ipv4_regex() {
         let tagger = RegexTagger::with_defaults();
-        let s = AnnotatedString {
-            candidate: StringCandidate::new(0, 13, 13, EncodingType::Ascii),
+        
+        let mut s_valid = AnnotatedString {
+            candidate: StringCandidate::new(0, 11, 11, EncodingType::Ascii),
             score: 0.0,
             tags: Vec::new(),
             content: "192.168.1.1".to_string(),
             derived: Vec::new(),
         };
+        tagger.evaluate(&mut s_valid);
+        assert!(s_valid.tags.contains(&Tag::IpV4));
+        
+        let mut s_invalid = AnnotatedString {
+            candidate: StringCandidate::new(0, 15, 15, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "999.999.999.999".to_string(),
+            derived: Vec::new(),
+        };
+        tagger.evaluate(&mut s_invalid);
+        assert!(!s_invalid.tags.contains(&Tag::IpV4));
+    }
 
-        // This would normally be done through the pipeline
-        for (pattern, tag) in &tagger.patterns {
-            if pattern.is_match(&s.content) {
-                assert_eq!(tag, &Tag::IpV4);
-            }
-        }
+    #[test]
+    fn test_ipv6_regex() {
+        let tagger = RegexTagger::with_defaults();
+        
+        let mut s_valid = AnnotatedString {
+            candidate: StringCandidate::new(0, 11, 11, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "2001:db8::1".to_string(),
+            derived: Vec::new(),
+        };
+        tagger.evaluate(&mut s_valid);
+        assert!(s_valid.tags.contains(&Tag::IpV6));
+        
+        let mut s_invalid = AnnotatedString {
+            candidate: StringCandidate::new(0, 14, 14, EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "2001:db8::1::1".to_string(),
+            derived: Vec::new(),
+        };
+        tagger.evaluate(&mut s_invalid);
+        assert!(!s_invalid.tags.contains(&Tag::IpV6));
     }
 
     #[test]
@@ -925,5 +969,35 @@ mod phase10_tests {
         } else {
             panic!("Expected error, got Ok");
         }
+    }
+}
+
+#[cfg(test)]
+mod phase11_tests {
+    use super::*;
+
+    #[test]
+    fn test_url_regex() {
+        let tagger = RegexTagger::with_defaults();
+        
+        let mut s_valid = AnnotatedString {
+            candidate: crate::types::StringCandidate::new(0, 19, 19, crate::types::EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "https://example.com".to_string(),
+            derived: Vec::new(),
+        };
+        tagger.evaluate(&mut s_valid);
+        assert!(s_valid.tags.contains(&Tag::Url));
+        
+        let mut s_invalid = AnnotatedString {
+            candidate: crate::types::StringCandidate::new(0, 15, 15, crate::types::EncodingType::Ascii),
+            score: 0.0,
+            tags: Vec::new(),
+            content: "not-a-url".to_string(),
+            derived: Vec::new(),
+        };
+        tagger.evaluate(&mut s_invalid);
+        assert!(!s_invalid.tags.contains(&Tag::Url));
     }
 }
