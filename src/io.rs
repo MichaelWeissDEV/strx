@@ -98,7 +98,7 @@ pub fn get_context_bytes(
 
     let start = offset.saturating_sub(context_size);
     let end = (offset + context_size).min(data.len());
-    
+
     if start >= end {
         return None;
     }
@@ -116,17 +116,17 @@ pub fn get_hex_dump_context(
 ) -> Option<Vec<u8>> {
     // Calculate start: candidate_offset - context_size
     let start = candidate_offset.saturating_sub(context_size);
-    
+
     // Calculate end: candidate_offset + candidate_length + context_size
     let end = candidate_offset
         .saturating_add(candidate_length)
         .saturating_add(context_size)
         .min(data.len());
-    
+
     if start >= end || start >= data.len() {
         return None;
     }
-    
+
     Some(data[start..end].to_vec())
 }
 
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_from_file() {
         let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "test content").unwrap();
+        write!(file, "test content").unwrap();
         let path = file.path().to_str().unwrap();
 
         let source = InputSource::from_file(path).unwrap();

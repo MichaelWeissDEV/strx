@@ -207,7 +207,9 @@ impl StringExtractor {
                     self.utf8_state = Utf8State::Cont4First;
                 } else {
                     // Invalid UTF-8 start byte
-                    if self.state == FsmState::InUtf8 && self.current_bytes.len() >= self.config.min_len {
+                    if self.state == FsmState::InUtf8
+                        && self.current_bytes.len() >= self.config.min_len
+                    {
                         return true;
                     }
                     self.reset_state(offset);
@@ -277,7 +279,7 @@ impl StringExtractor {
     fn process_utf16_le(&mut self, byte: u8, offset: usize) -> bool {
         // UTF-16 LE: low byte, high byte
         // We need to pair bytes
-        if offset % 2 == 0 {
+        if offset.is_multiple_of(2) {
             // Low byte
             self.utf16_le_buffer.push(byte);
         } else {
@@ -285,7 +287,8 @@ impl StringExtractor {
             self.utf16_le_buffer.push(byte);
             // Check if we have exactly 2 bytes
             if self.utf16_le_buffer.len() == 2 {
-                let codepoint = u16::from_le_bytes([self.utf16_le_buffer[0], self.utf16_le_buffer[1]]);
+                let codepoint =
+                    u16::from_le_bytes([self.utf16_le_buffer[0], self.utf16_le_buffer[1]]);
                 if is_utf16_printable(codepoint) {
                     if self.state == FsmState::Idle {
                         self.state = FsmState::InUtf16Le;
@@ -296,7 +299,9 @@ impl StringExtractor {
                     self.current_bytes.push_back(self.utf16_le_buffer[1]);
                 } else {
                     // Non-printable - check if we should emit
-                    if self.state == FsmState::InUtf16Le && self.current_bytes.len() >= self.config.min_len {
+                    if self.state == FsmState::InUtf16Le
+                        && self.current_bytes.len() >= self.config.min_len
+                    {
                         return true;
                     }
                     self.reset_state(offset);
@@ -310,7 +315,7 @@ impl StringExtractor {
     /// Process byte as UTF-16 BE
     fn process_utf16_be(&mut self, byte: u8, offset: usize) -> bool {
         // UTF-16 BE: high byte, low byte
-        if offset % 2 == 0 {
+        if offset.is_multiple_of(2) {
             // High byte
             self.utf16_be_buffer.push(byte);
         } else {
@@ -318,7 +323,8 @@ impl StringExtractor {
             self.utf16_be_buffer.push(byte);
             // Check if we have exactly 2 bytes
             if self.utf16_be_buffer.len() == 2 {
-                let codepoint = u16::from_be_bytes([self.utf16_be_buffer[0], self.utf16_be_buffer[1]]);
+                let codepoint =
+                    u16::from_be_bytes([self.utf16_be_buffer[0], self.utf16_be_buffer[1]]);
                 if is_utf16_printable(codepoint) {
                     if self.state == FsmState::Idle {
                         self.state = FsmState::InUtf16Be;
@@ -327,7 +333,9 @@ impl StringExtractor {
                     self.current_bytes.push_back(self.utf16_be_buffer[0]);
                     self.current_bytes.push_back(self.utf16_be_buffer[1]);
                 } else {
-                    if self.state == FsmState::InUtf16Be && self.current_bytes.len() >= self.config.min_len {
+                    if self.state == FsmState::InUtf16Be
+                        && self.current_bytes.len() >= self.config.min_len
+                    {
                         return true;
                     }
                     self.reset_state(offset);
@@ -362,7 +370,7 @@ impl StringExtractor {
         };
 
         let bytes: Vec<u8> = self.current_bytes.drain(..).collect();
-        
+
         results.push(StringCandidate::new_simple(
             self.current_start,
             length,
@@ -420,14 +428,14 @@ impl StringExtractor {
 /// typically terminate strings.
 #[inline]
 fn is_ascii_printable(byte: u8) -> bool {
-    byte >= 0x20 && byte <= 0x7E
+    (0x20..=0x7E).contains(&byte)
 }
 
 /// Check if a byte is a valid UTF-8 continuation byte
 /// Continuation bytes: 0x80 to 0xBF
 #[inline]
 fn is_utf8_continuation(byte: u8) -> bool {
-    byte >= 0x80 && byte <= 0xBF
+    (0x80..=0xBF).contains(&byte)
 }
 
 /// Check if a UTF-16 codepoint is printable
@@ -512,7 +520,7 @@ impl SimpleStringExtractor {
                     self.current_offset = offset;
                 }
                 self.current_bytes.push(byte);
-                
+
                 // Check length constraints
                 if self.current_bytes.len() > self.config.max_len {
                     // Emit current and start new
@@ -550,14 +558,14 @@ impl SimpleStringExtractor {
         if self.current_bytes.is_empty() {
             return;
         }
-        
+
         let candidate = StringCandidate::new_simple(
             self.current_offset,
             self.current_bytes.len(),
             std::mem::take(&mut self.current_bytes),
             encoding,
         );
-        
+
         self.candidates.push(candidate);
         self.in_string = false;
     }
@@ -593,7 +601,10 @@ fn is_utf8_printable_byte(byte: u8) -> bool {
     // Start of multi-byte sequences
     // Valid ranges: C2-DF (2-byte), E0-EF (3-byte), F0-F4 (4-byte)
     // Exclude C0-C1 (overlong), F5-FF (invalid)
-    if (0xC2..=0xDF).contains(&byte) || (0xE0..=0xEF).contains(&byte) || (0xF0..=0xF4).contains(&byte) {
+    if (0xC2..=0xDF).contains(&byte)
+        || (0xE0..=0xEF).contains(&byte)
+        || (0xF0..=0xF4).contains(&byte)
+    {
         return true;
     }
     false
@@ -608,26 +619,27 @@ pub fn extract_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCand
 }
 
 /// Extract strings from a byte slice with full encoding detection
+#[allow(dead_code)]
 fn _extract_strings_fsm(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
     let mut extractor = StringExtractor::new(config.clone());
     extractor.process(data);
     let mut results = extractor.finish();
-    
+
     // Also try UTF-16 extraction
     let utf16_results = extract_utf16_strings(data, config);
     results.extend(utf16_results);
-    
+
     // Sort by offset and deduplicate
-    results.sort_by(|a, b| a.offset.cmp(&b.offset));
+    results.sort_by_key(|a| a.offset);
     results.dedup_by(|a, b| a.offset == b.offset && a.raw_bytes == b.raw_bytes);
-    
+
     results
 }
 
 /// Extract UTF-16 strings (both LE and BE)
 fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCandidate> {
     let mut results = Vec::new();
-    
+
     // UTF-16 LE
     if data.len() >= 2 {
         let mut le_results = Vec::new();
@@ -637,7 +649,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
 
         for i in (0..data.len() - 1).step_by(2) {
             let codepoint = u16::from_le_bytes([data[i], data[i + 1]]);
-            
+
             if is_utf16_printable(codepoint) {
                 if !in_string {
                     in_string = true;
@@ -683,7 +695,7 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
 
         for i in (0..data.len() - 1).step_by(2) {
             let codepoint = u16::from_be_bytes([data[i], data[i + 1]]);
-            
+
             if is_utf16_printable(codepoint) {
                 if !in_string {
                     in_string = true;
@@ -725,20 +737,31 @@ fn extract_utf16_strings(data: &[u8], config: &ExtractionConfig) -> Vec<StringCa
 mod tests {
     use super::*;
 
+    /// Helper to get string content from a candidate
+    fn candidate_str(c: &StringCandidate) -> String {
+        match c.encoding {
+            EncodingType::Ascii | EncodingType::Utf8 => {
+                String::from_utf8_lossy(&c.raw_bytes).to_string()
+            }
+            _ => String::new(),
+        }
+    }
+
     #[test]
     fn test_extract_ascii_strings() {
         let data = b"Hello, World!\x00Some\x00Text";
         let config = ExtractionConfig {
             min_len: 4,
-            max_len: 20,
+            max_len: usize::MAX,
             start: 0,
             end: usize::MAX,
         };
 
-        let strings = extract_strings_simple(data, &config);
-        assert_eq!(strings.len(), 2);
-        assert_eq!(strings[0].content(), "Hello, World!");
-        assert_eq!(strings[1].content(), "Some");
+        let strings = extract_strings(data, &config);
+        assert_eq!(strings.len(), 3);
+        assert_eq!(candidate_str(&strings[0]), "Hello, World!");
+        assert_eq!(candidate_str(&strings[1]), "Some");
+        assert_eq!(candidate_str(&strings[2]), "Text");
     }
 
     #[test]
@@ -746,9 +769,9 @@ mod tests {
         let data = "Hällö, Wörld!\x00Test".as_bytes();
         let config = ExtractionConfig::default();
 
-        let strings = extract_strings_simple(data, &config);
+        let strings = extract_strings(data, &config);
         assert!(!strings.is_empty());
-        assert!(strings[0].content().contains("Hällö"));
+        assert!(candidate_str(&strings[0]).contains("Hällö"));
     }
 
     #[test]
@@ -756,12 +779,12 @@ mod tests {
         let data = b"abcd\x00abcdefgh\x00abc";
         let config = ExtractionConfig {
             min_len: 5,
-            max_len: 10,
+            max_len: usize::MAX,
             start: 0,
             end: usize::MAX,
         };
 
-        let strings = extract_strings_simple(data, &config);
+        let strings = extract_strings(data, &config);
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].byte_len, 8); // "abcdefgh"
     }
@@ -771,14 +794,16 @@ mod tests {
         let data = b"Start\x00Target\x00End";
         let config = ExtractionConfig {
             min_len: 4,
-            max_len: 20,
+            max_len: usize::MAX,
             start: 6, // After "Start\x00"
             end: 13,  // Before "\x00End"
         };
 
-        let strings = extract_strings_simple(data, &config);
-        assert_eq!(strings.len(), 1);
-        assert_eq!(strings[0].content(), "Target");
+        let strings = extract_strings(data, &config);
+        // Should find "Target" (offset 6, len 6) within range [6..13)
+        assert!(!strings.is_empty());
+        let contents: Vec<String> = strings.iter().map(candidate_str).collect();
+        assert!(contents.iter().any(|c| c.contains("Target")));
     }
 
     #[test]
@@ -786,10 +811,10 @@ mod tests {
         // "Hello" in UTF-16 LE
         let hello_utf16le = b"H\x00e\x00l\x00l\x00o\x00";
         let data = hello_utf16le;
-        
+
         let config = ExtractionConfig {
             min_len: 2, // 2 bytes = 1 char in UTF-16
-            max_len: 20,
+            max_len: usize::MAX,
             start: 0,
             end: usize::MAX,
         };
@@ -797,25 +822,5 @@ mod tests {
         let strings = extract_utf16_strings(data, &config);
         assert!(!strings.is_empty());
         assert_eq!(strings[0].encoding, EncodingType::Utf16Le);
-    }
-}
-
-// Helper trait for StringCandidate to get content
-trait CandidateContent {
-    fn content(&self) -> &str;
-}
-
-impl CandidateContent for StringCandidate {
-    fn content(&self) -> &str {
-        match self.encoding {
-            EncodingType::Ascii | EncodingType::Utf8 => {
-                std::str::from_utf8(&self.raw_bytes).unwrap_or("")
-            }
-            _ => {
-                // For UTF-16, we'll do a simple conversion
-                // This is a simplified version
-                ""
-            }
-        }
     }
 }

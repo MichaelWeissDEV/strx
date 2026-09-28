@@ -47,13 +47,13 @@ impl ScoringConfig {
     pub fn security_focused() -> Self {
         Self {
             base_per_char: 0.05,
-            ioc_bonus: 75.0,      // High bonus for IoCs
+            ioc_bonus: 75.0, // High bonus for IoCs
             dictionary_bonus: 50.0,
             entropy_penalty: -10.0,
             smart_peek_bonus: 40.0,
             code_bonus: 10.0,
             ai_bonus: 5.0,
-            crypto_bonus: 100.0,   // Very high bonus for crypto keys
+            crypto_bonus: 100.0, // Very high bonus for crypto keys
             hash_bonus: 30.0,
         }
     }
@@ -124,7 +124,10 @@ impl ScoringEngine {
         tag_bonuses.insert(Tag::HighEntropy, config.entropy_penalty);
         // Low entropy doesn't need a bonus as it's the default
 
-        Self { config, tag_bonuses }
+        Self {
+            config,
+            tag_bonuses,
+        }
     }
 
     /// Score a single annotated string
@@ -174,30 +177,44 @@ impl ScoringEngine {
     }
 
     /// Score multiple strings
-    pub fn score_all(&self, strings: &mut Vec<AnnotatedString>) {
+    pub fn score_all(&self, strings: &mut [AnnotatedString]) {
         for s in strings {
             self.score(s);
         }
     }
 
     /// Sort strings by score (descending)
-    pub fn sort_by_score(strings: &mut Vec<AnnotatedString>) {
-        strings.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    pub fn sort_by_score(strings: &mut [AnnotatedString]) {
+        strings.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     /// Get the highest scoring string
     pub fn get_best_match(strings: &[AnnotatedString]) -> Option<&AnnotatedString> {
-        strings.iter().max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal))
+        strings.iter().max_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Normalize scores to 0-100 range
-    pub fn normalize_scores(strings: &mut Vec<AnnotatedString>) {
+    pub fn normalize_scores(strings: &mut [AnnotatedString]) {
         if strings.is_empty() {
             return;
         }
 
-        let min_score = strings.iter().map(|s| s.score).fold(f32::INFINITY, f32::min);
-        let max_score = strings.iter().map(|s| s.score).fold(f32::NEG_INFINITY, f32::max);
+        let min_score = strings
+            .iter()
+            .map(|s| s.score)
+            .fold(f32::INFINITY, f32::min);
+        let max_score = strings
+            .iter()
+            .map(|s| s.score)
+            .fold(f32::NEG_INFINITY, f32::max);
 
         if min_score == max_score {
             return; // All scores are the same
@@ -216,19 +233,23 @@ impl Default for ScoringEngine {
 }
 
 /// Sort strings by various criteria
-pub fn sort_strings(strings: &mut Vec<AnnotatedString>, sort_order: crate::types::SortOrder) {
+pub fn sort_strings(strings: &mut [AnnotatedString], sort_order: crate::types::SortOrder) {
     match sort_order {
         crate::types::SortOrder::Offset => {
-            strings.sort_by(|a, b| a.candidate.offset.cmp(&b.candidate.offset));
+            strings.sort_by_key(|a| a.candidate.offset);
         }
         crate::types::SortOrder::LengthAsc => {
-            strings.sort_by(|a, b| a.candidate.byte_len.cmp(&b.candidate.byte_len));
+            strings.sort_by_key(|a| a.candidate.byte_len);
         }
         crate::types::SortOrder::LengthDesc => {
-            strings.sort_by(|a, b| b.candidate.byte_len.cmp(&a.candidate.byte_len));
+            strings.sort_by_key(|a| std::cmp::Reverse(a.candidate.byte_len));
         }
         crate::types::SortOrder::Score => {
-            strings.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            strings.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         crate::types::SortOrder::Alphabetical => {
             strings.sort_by(|a, b| a.content.cmp(&b.content));
@@ -242,16 +263,16 @@ pub fn process_and_score(
     sort_order: crate::types::SortOrder,
 ) -> Vec<AnnotatedString> {
     let mut strings = strings;
-    let mut engine = ScoringEngine::new();
-    
+    let engine = ScoringEngine::new();
+
     engine.score_all(&mut strings);
     sort_strings(&mut strings, sort_order);
-    
+
     strings
 }
 
 /// Apply tag-based scoring modifiers
-pub fn apply_tag_scores(strings: &mut Vec<AnnotatedString>, config: &ScoringConfig) {
+pub fn apply_tag_scores(strings: &mut [AnnotatedString], config: &ScoringConfig) {
     for s in strings {
         let mut score = s.candidate.byte_len as f32 * config.base_per_char;
 
@@ -299,12 +320,15 @@ mod tests {
 
     #[test]
     fn test_scoring_engine() {
-        let mut engine = ScoringEngine::new();
+        let engine = ScoringEngine::new();
 
         // Create a test string with various tags
-        let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new_simple(0, 15, "test@example.com".as_bytes().to_vec(), EncodingType::Ascii),
-        );
+        let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+            0,
+            15,
+            "test@example.com".as_bytes().to_vec(),
+            EncodingType::Ascii,
+        ));
         s.add_tag(Tag::Email);
         s.add_tag(Tag::DictionaryMatch);
 
@@ -319,23 +343,32 @@ mod tests {
     fn test_sort_by_score() {
         let mut strings = vec![
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    0,
+                    5,
+                    "short".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 10.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    5,
+                    10,
+                    "medium".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 50.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    15,
+                    15,
+                    "long".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 30.0;
                 s
             },
@@ -352,23 +385,32 @@ mod tests {
     fn test_get_best_match() {
         let strings = vec![
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    0,
+                    5,
+                    "short".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 10.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    5,
+                    10,
+                    "medium".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 50.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    15,
+                    15,
+                    "long".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 30.0;
                 s
             },
@@ -383,30 +425,38 @@ mod tests {
     fn test_normalize_scores() {
         let mut strings = vec![
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(0, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    0,
+                    5,
+                    "short".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 0.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(5, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    5,
+                    10,
+                    "medium".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 50.0;
                 s
             },
             {
-                let mut s = AnnotatedString::from_candidate(
-                    StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
-                );
+                let mut s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+                    15,
+                    15,
+                    "long".as_bytes().to_vec(),
+                    EncodingType::Ascii,
+                ));
                 s.score = 100.0;
                 s
             },
         ];
 
-        let mut engine = ScoringEngine::new();
-        engine.normalize_scores(&mut strings);
+        ScoringEngine::normalize_scores(&mut strings);
 
         // Check that scores are normalized to 0-100 range
         for s in &strings {
@@ -419,15 +469,24 @@ mod tests {
         use crate::types::SortOrder;
 
         let mut strings = vec![
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(0, 10, "medium".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(5, 5, "short".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(15, 15, "long".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                0,
+                10,
+                "medium".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                5,
+                5,
+                "short".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                15,
+                15,
+                "long".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
         ];
 
         sort_strings(&mut strings, SortOrder::LengthDesc);
@@ -442,15 +501,24 @@ mod tests {
         use crate::types::SortOrder;
 
         let mut strings = vec![
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(15, 10, "late".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(0, 10, "first".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
-            AnnotatedString::from_candidate(
-                StringCandidate::new_simple(5, 10, "middle".as_bytes().to_vec(), EncodingType::Ascii),
-            ),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                15,
+                10,
+                "late".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                0,
+                10,
+                "first".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
+            AnnotatedString::from_candidate(StringCandidate::new_simple(
+                5,
+                10,
+                "middle".as_bytes().to_vec(),
+                EncodingType::Ascii,
+            )),
         ];
 
         sort_strings(&mut strings, SortOrder::Offset);

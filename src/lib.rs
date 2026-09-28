@@ -17,6 +17,6 @@ pub use cli::Args;
 pub use extract::{extract_strings, ExtractionConfig};
 pub use heuristics::{HeuristicFilter, HeuristicPipeline, PipelineBuilder};
 pub use io::InputSource;
-pub use output::{OutputFormatter, OutputFormatterBuilder, ExtractionStats, print_summary};
-pub use scoring::{ScoringEngine, ScoringConfig, sort_strings, process_and_score};
+pub use output::{print_summary, ExtractionStats, OutputFormatter, OutputFormatterBuilder};
+pub use scoring::{process_and_score, sort_strings, ScoringConfig, ScoringEngine};
 pub use types::{AnnotatedString, EncodingType, PipelineConfig, SortOrder, StringCandidate, Tag};

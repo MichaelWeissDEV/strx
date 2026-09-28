@@ -1,6 +1,6 @@
 //! Core data types for strx
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Supported string encodings for detection and extraction
@@ -88,7 +88,7 @@ impl fmt::Display for Tag {
 }
 
 /// A candidate string extracted from binary data
-/// 
+///
 /// Zero-copy design: This struct stores only the offset and length within the source data.
 /// The actual bytes are referenced from the InputSource that owns the data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,7 +108,13 @@ pub struct StringCandidate {
 
 impl StringCandidate {
     /// Create a new StringCandidate
-    pub fn new(offset: usize, byte_len: usize, char_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+    pub fn new(
+        offset: usize,
+        byte_len: usize,
+        char_len: usize,
+        raw_bytes: Vec<u8>,
+        encoding: EncodingType,
+    ) -> Self {
         Self {
             offset,
             byte_len,
@@ -119,9 +125,14 @@ impl StringCandidate {
     }
 
     /// Create a new StringCandidate with the old signature (byte_len only)
-    /// This maintains backward compatibility while transitioning to the new design
-    #[deprecated(note = "Use new() with explicit char_len instead")]
-    pub fn new_simple(offset: usize, byte_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+    /// This maintains backward compatibility while transitioning to the new design.
+    /// TODO: Remove in favor of new() with explicit char_len.
+    pub fn new_simple(
+        offset: usize,
+        byte_len: usize,
+        raw_bytes: Vec<u8>,
+        encoding: EncodingType,
+    ) -> Self {
         let char_len = match encoding {
             EncodingType::Ascii | EncodingType::Utf8 => byte_len,
             EncodingType::Utf16Le | EncodingType::Utf16Be => byte_len / 2,
@@ -132,7 +143,12 @@ impl StringCandidate {
     /// Create a new StringCandidate with char_len inferred from byte_len
     /// For ASCII and UTF-8, char_len = byte_len for single-byte characters
     /// For UTF-16, char_len = byte_len / 2
-    pub fn new_with_inferred_char_len(offset: usize, byte_len: usize, raw_bytes: Vec<u8>, encoding: EncodingType) -> Self {
+    pub fn new_with_inferred_char_len(
+        offset: usize,
+        byte_len: usize,
+        raw_bytes: Vec<u8>,
+        encoding: EncodingType,
+    ) -> Self {
         let char_len = match encoding {
             EncodingType::Ascii | EncodingType::Utf8 => {
                 // For ASCII, each byte is one char
@@ -147,7 +163,6 @@ impl StringCandidate {
         };
         Self::new(offset, byte_len, char_len, raw_bytes, encoding)
     }
-}
 
     /// Get the content as a string slice (lossy UTF-8 conversion)
     pub fn as_str(&self) -> &str {
@@ -203,18 +218,14 @@ impl AnnotatedString {
             EncodingType::Ascii | EncodingType::Utf8 => {
                 String::from_utf8_lossy(&candidate.raw_bytes).to_string()
             }
-            EncodingType::Utf16Le => {
-                encoding_rs::UTF_16LE
-                    .decode(&candidate.raw_bytes)
-                    .0
-                    .to_string()
-            }
-            EncodingType::Utf16Be => {
-                encoding_rs::UTF_16BE
-                    .decode(&candidate.raw_bytes)
-                    .0
-                    .to_string()
-            }
+            EncodingType::Utf16Le => encoding_rs::UTF_16LE
+                .decode(&candidate.raw_bytes)
+                .0
+                .to_string(),
+            EncodingType::Utf16Be => encoding_rs::UTF_16BE
+                .decode(&candidate.raw_bytes)
+                .0
+                .to_string(),
         };
 
         Self {
@@ -270,9 +281,10 @@ impl PartialEq for AnnotatedString {
 impl Eq for AnnotatedString {}
 
 /// Sort order for output
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortOrder {
     /// Sort by byte offset (ascending)
+    #[default]
     Offset,
     /// Sort by string length (ascending)
     LengthAsc,
@@ -282,12 +294,6 @@ pub enum SortOrder {
     Score,
     /// Sort alphabetically by content
     Alphabetical,
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        SortOrder::Offset
-    }
 }
 
 impl fmt::Display for SortOrder {

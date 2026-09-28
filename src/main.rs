@@ -8,11 +8,13 @@ use std::time::Instant;
 
 use strx::cli::Args;
 use strx::extract::{extract_strings, ExtractionConfig};
-use strx::heuristics::{HeuristicPipeline, PipelineBuilder, parse_tag_filters, filter_by_required_tags, filter_by_excluded_tags};
+use strx::heuristics::{
+    filter_by_excluded_tags, filter_by_required_tags, parse_tag_filters, PipelineBuilder,
+};
 use strx::io::InputSource;
-use strx::output::{OutputFormatter, ExtractionStats, print_summary};
-use strx::scoring::{ScoringEngine, sort_strings};
-use strx::types::{AnnotatedString, PipelineConfig, SortOrder, Tag};
+use strx::output::{print_summary, ExtractionStats, OutputFormatter};
+use strx::scoring::{sort_strings, ScoringEngine};
+use strx::types::{AnnotatedString, SortOrder};
 
 fn main() -> Result<()> {
     // Parse command-line arguments
@@ -25,8 +27,10 @@ fn main() -> Result<()> {
     if args.verbose {
         eprintln!("strx - Strings Extended");
         eprintln!("Input: {:?}", args.input);
-        eprintln!("Configuration: min={}, max={:?}, start={}, end={:?}, raw={}, fuzzy={}",
-            args.min, args.max, args.start, args.end, args.raw, args.fuzzy);
+        eprintln!(
+            "Configuration: min={}, max={:?}, start={}, end={:?}, raw={}, fuzzy={}",
+            args.min, args.max, args.start, args.end, args.raw, args.fuzzy
+        );
     }
 
     // Open input source
@@ -41,7 +45,7 @@ fn main() -> Result<()> {
 
     // Get data slice for processing
     let data = source.as_slice();
-    
+
     if args.verbose {
         eprintln!("Input size: {} bytes", data.len());
     }
@@ -60,7 +64,7 @@ fn main() -> Result<()> {
     // ========================================
     // PHASE 1: String Extraction
     // ========================================
-    
+
     let candidates = extract_strings(data, &extraction_config);
 
     if args.verbose {
@@ -70,14 +74,17 @@ fn main() -> Result<()> {
     // ========================================
     // PHASE 2: Convert to AnnotatedStrings
     // ========================================
-    
+
     let mut strings: Vec<AnnotatedString> = candidates
         .into_iter()
         .map(AnnotatedString::from_candidate)
         .collect();
 
     if args.verbose {
-        eprintln!("After converting to AnnotatedString: {} strings", strings.len());
+        eprintln!(
+            "After converting to AnnotatedString: {} strings",
+            strings.len()
+        );
     }
 
     if strings.is_empty() && !args.quiet {
@@ -91,7 +98,7 @@ fn main() -> Result<()> {
     // ========================================
     // PHASE 3: Heuristic Analysis Pipeline
     // ========================================
-    
+
     if !args.raw {
         // Build the heuristic pipeline
         let pipeline = PipelineBuilder::new()
@@ -106,13 +113,17 @@ fn main() -> Result<()> {
 
         if args.verbose {
             let tagged_count = strings.iter().filter(|s| !s.tags.is_empty()).count();
-            eprintln!("After heuristics: {} strings, {} tagged", strings.len(), tagged_count);
+            eprintln!(
+                "After heuristics: {} strings, {} tagged",
+                strings.len(),
+                tagged_count
+            );
         }
 
         // ========================================
         // PHASE 4: Apply Tag Filters
         // ========================================
-        
+
         // Parse tag filters
         let (required_tags, excluded_tags) = parse_tag_filters(&args.tag, &args.exclude_tag);
 
@@ -131,14 +142,14 @@ fn main() -> Result<()> {
         // ========================================
         // PHASE 5: Scoring
         // ========================================
-        
-        let mut scoring_engine = ScoringEngine::new();
+
+        let scoring_engine = ScoringEngine::new();
         scoring_engine.score_all(&mut strings);
 
         // ========================================
         // PHASE 6: Sorting
         // ========================================
-        
+
         sort_strings(&mut strings, pipeline_config.sort_order);
     } else {
         // Raw mode: just sort by offset
@@ -148,7 +159,7 @@ fn main() -> Result<()> {
     // ========================================
     // PHASE 7: Output Formatting
     // ========================================
-    
+
     let formatter = OutputFormatter::new()
         .with_json(args.json)
         .with_encoding(args.show_encoding)
@@ -184,8 +195,10 @@ fn main() -> Result<()> {
     if args.verbose {
         let elapsed = start_time.elapsed();
         eprintln!("\nProcessing time: {:.3}s", elapsed.as_secs_f64());
-        eprintln!("Strings per second: {:.0}", 
-            strings.len() as f64 / elapsed.as_secs_f64());
+        eprintln!(
+            "Strings per second: {:.0}",
+            strings.len() as f64 / elapsed.as_secs_f64()
+        );
     }
 
     Ok(())

@@ -29,7 +29,9 @@ pub struct HeuristicPipeline {
 
 impl HeuristicPipeline {
     pub fn new() -> Self {
-        Self { filters: Vec::new() }
+        Self {
+            filters: Vec::new(),
+        }
     }
 
     /// Add a filter to the pipeline
@@ -93,7 +95,7 @@ impl EntropyChecker {
         }
 
         let mut byte_counts = [0usize; 256];
-        let total_bytes = s.bytes().count();
+        let total_bytes = s.len();
 
         for byte in s.bytes() {
             byte_counts[byte as usize] += 1;
@@ -146,9 +148,19 @@ pub struct RegexTagger {
 
 impl RegexTagger {
     pub fn new() -> Self {
-        Self { patterns: Vec::new() }
+        Self {
+            patterns: Vec::new(),
+        }
     }
+}
 
+impl Default for RegexTagger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RegexTagger {
     pub fn with_defaults() -> Self {
         let mut tagger = Self::new();
 
@@ -164,10 +176,7 @@ impl RegexTagger {
         tagger.add_pattern(ipv6_re, Tag::IpV6);
 
         // URL pattern (simplified)
-        let url_re = Regex::new(
-            r"^(https?|ftp)://[^\s/$.?#].[^\s]*$",
-        )
-        .unwrap();
+        let url_re = Regex::new(r"^(https?|ftp)://[^\s/$.?#].[^\s]*$").unwrap();
         tagger.add_pattern(url_re, Tag::Url);
 
         // Email pattern
@@ -187,14 +196,14 @@ impl RegexTagger {
         tagger.add_pattern(sha256_re, Tag::Sha256Hash);
 
         // Cryptographic key patterns (various formats)
-        let crypto_re = Regex::new(
-            r"-----BEGIN (RSA|DSA|EC|PGP|OPENSSH) PRIVATE KEY-----",
-        )
-        .unwrap();
+        let crypto_re =
+            Regex::new(r"-----BEGIN (RSA|DSA|EC|PGP|OPENSSH) PRIVATE KEY-----").unwrap();
         tagger.add_pattern(crypto_re, Tag::CryptoKey);
 
         // AI/ML token patterns
-        let ai_re = Regex::new(r"<\|im_start\|>|<\|im_end\|>|<\|system\|>|<\|user\|>|<\|assistant\|>").unwrap();
+        let ai_re =
+            Regex::new(r"<\|im_start\|>|<\|im_end\|>|<\|system\|>|<\|user\|>|<\|assistant\|>")
+                .unwrap();
         tagger.add_pattern(ai_re, Tag::AiToken);
 
         tagger
@@ -272,12 +281,12 @@ impl DictionaryMatcher {
         // Clear existing words and automaton
         self.words.clear();
         self.automaton = None;
-        
+
         // Load all dictionaries
         for path in paths {
             self.load_dictionary(path)?;
         }
-        
+
         // Deduplicate words
         let mut unique_words: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
@@ -287,7 +296,7 @@ impl DictionaryMatcher {
                 unique_words.push(word.clone());
             }
         }
-        
+
         // Build single Aho-Corasick automaton from all words
         if !unique_words.is_empty() {
             let automaton = AhoCorasickBuilder::new()
@@ -295,7 +304,7 @@ impl DictionaryMatcher {
                 .build(&unique_words)?;
             self.automaton = Some(automaton);
         }
-        
+
         Ok(())
     }
 
@@ -310,7 +319,7 @@ impl HeuristicFilter for DictionaryMatcher {
         if let Some(automaton) = &self.automaton {
             // Use Aho-Corasick for exact matching
             for mat in automaton.find_iter(&s.content.to_lowercase()) {
-                if mat.len() > 0 {
+                if !mat.is_empty() {
                     s.add_tag(Tag::DictionaryMatch);
                     return true;
                 }
@@ -337,10 +346,12 @@ impl HeuristicFilter for DictionaryMatcher {
 }
 
 /// Smart peeker for Base64 and Hex decoding
+#[allow(dead_code)]
 pub struct SmartPeeker {
     base64_engine: general_purpose::GeneralPurpose,
 }
 
+#[allow(dead_code)]
 impl SmartPeeker {
     pub fn new() -> Self {
         Self {
@@ -355,9 +366,10 @@ impl SmartPeeker {
         }
 
         // Base64 alphabet
-        let base64_chars: HashSet<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-            .chars()
-            .collect();
+        let base64_chars: HashSet<char> =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+                .chars()
+                .collect();
 
         s.chars().all(|c| base64_chars.contains(&c))
     }
@@ -369,7 +381,7 @@ impl SmartPeeker {
         }
 
         // Hex string: even length, only hex digits
-        if s.len() % 2 != 0 {
+        if !s.len().is_multiple_of(2) {
             return false;
         }
 
@@ -398,6 +410,7 @@ impl SmartPeeker {
     }
 
     /// Check if decoded content has low entropy (likely plaintext)
+    #[allow(dead_code)]
     fn has_low_entropy(s: &str) -> bool {
         let entropy = EntropyChecker::calculate_entropy(s);
         entropy < 3.0 // Low threshold for decoded content
@@ -411,17 +424,12 @@ impl Default for SmartPeeker {
 }
 
 impl HeuristicFilter for SmartPeeker {
-    fn evaluate(&self, s: &mut AnnotatedString) -> bool {
-        let content = s.content.clone();
-
-        // Try Base64 decoding
+    fn evaluate(&self, _s: &mut AnnotatedString) -> bool {
         // NOTE: SmartPeeker is temporarily disabled to prevent mutation of original evidence
-        // as per P1-8 requirement: "Raw Evidence niemals verändern"
         // When re-enabled, it should:
         // 1. Store derived content separately (e.g., in a derived_content field)
         // 2. Never modify candidate.offset, candidate.byte_len, candidate.raw_bytes
         // 3. Add tags for decoded content
-        // For now, this is a no-op to maintain correctness
 
         true // Smart peeking never discards
     }
@@ -444,7 +452,15 @@ impl CodeTokenizer {
             ai_patterns: Vec::new(),
         }
     }
+}
 
+impl Default for CodeTokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeTokenizer {
     pub fn with_defaults() -> Self {
         let mut tokenizer = Self::new();
 
@@ -456,7 +472,7 @@ impl CodeTokenizer {
             r"\b(try|catch|finally|throw|throws)\b",
             r"\b(new|delete|this|super|self|static|const|let|var|final)\b",
             r"\{(.*?)\}", // Braces
-            r"\[.*?\]", // Brackets
+            r"\[.*?\]",   // Brackets
             r"\b(null|undefined|true|false|nil|None)\b",
         ];
 
@@ -559,7 +575,6 @@ impl HeuristicFilter for MaxLengthFilter {
 
 /// Builder for creating a heuristic pipeline with common configurations
 pub struct PipelineBuilder {
-    pipeline: HeuristicPipeline,
     fuzzy_matching: bool,
     dictionary_paths: Vec<PathBuf>,
     custom_regex: Vec<String>,
@@ -570,7 +585,6 @@ pub struct PipelineBuilder {
 impl PipelineBuilder {
     pub fn new() -> Self {
         Self {
-            pipeline: HeuristicPipeline::new(),
             fuzzy_matching: false,
             dictionary_paths: Vec::new(),
             custom_regex: Vec::new(),
@@ -710,7 +724,7 @@ pub fn parse_tag_name(name: &str) -> Option<Tag> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::types::{EncodingType, StringCandidate};
 
     #[test]
     fn test_entropy_calculation() {
@@ -727,7 +741,7 @@ mod tests {
 
     #[test]
     fn test_base64_detection() {
-        let smart_peeker = SmartPeeker::new();
+        let _smart_peeker = SmartPeeker::new();
         assert!(SmartPeeker::is_base64_like("SGVsbG8gV29ybGQ="));
         assert!(!SmartPeeker::is_base64_like("not base64!"));
     }
@@ -755,10 +769,13 @@ mod tests {
     #[test]
     fn test_ipv4_regex() {
         let tagger = RegexTagger::with_defaults();
-        let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new_simple(0, 13, "192.168.1.1".as_bytes().to_vec(), EncodingType::Ascii),
-        );
-        
+        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+            0,
+            13,
+            "192.168.1.1".as_bytes().to_vec(),
+            EncodingType::Ascii,
+        ));
+
         // This would normally be done through the pipeline
         for (pattern, tag) in &tagger.patterns {
             if pattern.is_match(&s.content) {
@@ -771,10 +788,13 @@ mod tests {
     fn test_email_regex() {
         let tagger = RegexTagger::with_defaults();
         let email = "test@example.com";
-        let mut s = AnnotatedString::from_candidate(
-            StringCandidate::new_simple(0, email.len(), email.as_bytes().to_vec(), EncodingType::Ascii),
-        );
-        
+        let s = AnnotatedString::from_candidate(StringCandidate::new_simple(
+            0,
+            email.len(),
+            email.as_bytes().to_vec(),
+            EncodingType::Ascii,
+        ));
+
         for (pattern, tag) in &tagger.patterns {
             if pattern.is_match(&s.content) {
                 assert_eq!(tag, &Tag::Email);

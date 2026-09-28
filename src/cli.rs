@@ -1,6 +1,6 @@
 //! CLI argument parsing and configuration
 
-use clap::{Parser, ArgAction, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -9,8 +9,7 @@ use crate::types::{PipelineConfig, SortOrder};
 /// Custom parser for hexadecimal usize values
 fn parse_hex_or_decimal(s: &str) -> Result<usize, String> {
     if s.starts_with("0x") || s.starts_with("0X") {
-        usize::from_str_radix(&s[2..], 16)
-            .map_err(|e| format!("Invalid hex number '{}': {}", s, e))
+        usize::from_str_radix(&s[2..], 16).map_err(|e| format!("Invalid hex number '{}': {}", s, e))
     } else {
         usize::from_str(s).map_err(|e| format!("Invalid decimal number '{}': {}", s, e))
     }
